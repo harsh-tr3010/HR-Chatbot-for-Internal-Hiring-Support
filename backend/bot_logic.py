@@ -34,7 +34,7 @@ def is_valid_email(email):
     return re.match(r"[^@]+@[^@]+\.[^@]+", email)
 
 def is_valid_phone(phone):
-    # Strip spaces/dashes and check length
+    
     clean = re.sub(r'\D', '', phone)
     return len(clean) >= 10
 
@@ -45,9 +45,8 @@ def is_numeric(val):
     except ValueError:
         return False
 
-
 async def evaluate_candidate(data: dict):
-    # Fetch job safely
+    
     job = await job_openings_collection.find_one({"title": {"$regex": data['preferred_role'], "$options": "i"}})
     if not job:
         return "Role not found in active database, but profile saved.", "Pending Review"
@@ -56,11 +55,9 @@ async def evaluate_candidate(data: dict):
     cand_exp = float(data["total_experience"])
     req_skills = [s.lower() for s in job["skills_required"]]
     cand_skills = [s.strip().lower() for s in data["skills"].split(",")]
-
     
     matched_skills = [s for s in cand_skills if any(req in s or s in req for req in req_skills)]
     skill_match_percent = len(matched_skills) / len(req_skills) if req_skills else 1.0
-
     
     if cand_exp >= req_exp and skill_match_percent >= 0.6:
         status = "Shortlisted for next step" 
@@ -86,7 +83,7 @@ async def process_message(session_id: str, message: str) -> str:
         sessions[session_id] = {"intent": None, "step": None, "data": {}}
     
     session = sessions[session_id]
-
+    
     
     if not session["intent"]:
         intent = get_intent(message)
@@ -95,7 +92,6 @@ async def process_message(session_id: str, message: str) -> str:
             jobs_cursor = job_openings_collection.find({})
             all_jobs = await jobs_cursor.to_list(length=50)
             if not all_jobs: return "There are currently no job openings."
-            
             
             display_jobs = random.sample(all_jobs, min(5, len(all_jobs)))
             
@@ -111,7 +107,6 @@ async def process_message(session_id: str, message: str) -> str:
             res += "Ready? Reply with **'I want to apply for a job'** to start your application! 🚀"
             return res
 
-
         elif intent == "apply_job":
             session["intent"] = "apply_job"
             session["step"] = "ask_role"
@@ -121,6 +116,7 @@ async def process_message(session_id: str, message: str) -> str:
             session["intent"] = "raise_hiring_request"
             session["step"] = "ask_dept"
             return "I can help with that. Please enter the department name."
+            
         elif intent == "check_status":
             session["intent"] = "check_status"
             session["step"] = "ask_email"
@@ -146,7 +142,7 @@ async def process_message(session_id: str, message: str) -> str:
         else: 
             sys_prompt = "You are an internal HR Assistant. Answer questions about the hiring process, documents required (ID, Resume, Certificates), or expected response time (usually 3-5 business days). Keep it brief and professional."
             comp = groq_client.chat.completions.create(
-                model="llama-3.1-8b-instant", # <-- UPDATED MODEL HERE
+                model="llama-3.1-8b-instant",
                 messages=[{"role": "system", "content": sys_prompt}, {"role": "user", "content": message}]
             )
             return comp.choices[0].message.content
@@ -211,36 +207,14 @@ async def process_message(session_id: str, message: str) -> str:
         elif step == "ask_resume":
             session["data"]["resume_link"] = message
             
-            
             summary, status = await evaluate_candidate(session["data"])
             session["data"]["screening_status"] = status
-            
-            
-            profile_query = {
-                "email": session["data"]["email"],
-                "phone": session["data"]["phone"]
-            }
-            
-            
-            profile_update = {"$set": session["data"]}
-            
-            
-            await candidates_collection.update_one(profile_query, profile_update, upsert=True)
-            
-            
-            sessions[session_id] = {"intent": None, "step": None, "data": {}}
-            
-            return f"Thank you. Based on your profile, you are **{status}**. Your candidate profile has been successfully saved and linked to your email ({session['data']['email']}).\n\n{summary}"
-            
-            
-            summary, status = await evaluate_candidate(session["data"])
-            session["data"]["screening_status"] = status
-            
             
             await candidates_collection.insert_one(session["data"])
             
             sessions[session_id] = {"intent": None, "step": None, "data": {}}
-            return f"Thank you. Based on your profile, you are **{status}**. Your application has been submitted successfully.\n\n{summary}"
+            
+            return f"Thank you. Based on your profile, you are **{status}**. Your application for **{session['data']['preferred_role']}** has been successfully saved and linked to your email ({session['data']['email']}).\n\n{summary}"
 
     
     if session["intent"] == "raise_hiring_request":
@@ -289,7 +263,6 @@ async def process_message(session_id: str, message: str) -> str:
         elif step == "ask_replacement":
             session["data"]["position_type"] = message
             
-            
             await hiring_requests_collection.insert_one(session["data"])
             
             summary = f"""
@@ -304,5 +277,48 @@ async def process_message(session_id: str, message: str) -> str:
             """
             sessions[session_id] = {"intent": None, "step": None, "data": {}}
             return f"Your hiring request has been created successfully.\n\n{summary}"
+
+    
+    if session["intent"] == "check_status":
+        step = session["step"]
+        if step == "ask_email":
+            if not is_valid_email(message): return "Please provide a valid email format."
+            session["data"]["email"] = message
+            session["step"] = "ask_phone"
+            return "Got it. Now, please enter your registered **Phone Number**."
+        elif step == "ask_phone":
+            if not is_valid_phone(message): return "Please provide a valid phone number."
+            session["data"]["phone"] = message
+            
+            
+            profile_query = {
+                "email": session["data"]["email"],
+                "phone": session["data"]["phone"]
+            }
+            
+            
+            applications = await candidates_collection.find(profile_query).to_list(length=10)
+            
+            
+            sessions[session_id] = {"intent": None, "step": None, "data": {}}
+            
+            if applications:
+                
+                name = applications[0].get("full_name", "Candidate")
+                
+                res = f"**Application Forms Found for {name}** 🎉\n\n"
+                
+                
+                for idx, app in enumerate(applications, 1):
+                    role = app.get("preferred_role", "Unknown Role")
+                    status = app.get("screening_status", "Pending HR Review")
+                    res += f"**{idx}. 💼 Role:** {role}\n"
+                    res += f"   📊 **Status:** {status}\n"
+                    res += "   ━━━━━━━━━━━━━━━━━━━━\n"
+                    
+                res += "\nOur team will contact you soon regarding the next steps!"
+                return res
+            else:
+                return "❌ **Record Not Found.** I couldn't find any applications matching that Email and Phone Number in our system. Please make sure you entered the exact details you used to apply."
 
     return "I didn't quite understand. You can ask to view jobs, apply for a job, raise a hiring request, or check shortlisted candidates."
