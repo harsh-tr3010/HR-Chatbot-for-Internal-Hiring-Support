@@ -19,12 +19,19 @@ function Sidebar({ setView }) {
   Hiring Request
 </li>
 
+
         <li
           className="cursor-pointer"
           onClick={() => setView("apply")}
         >
           Apply Job
         </li>
+        <li
+  className="cursor-pointer"
+  onClick={() => setView("admin")}
+>
+  Admin Dashboard
+</li>
       </ul>
     </div>
   );

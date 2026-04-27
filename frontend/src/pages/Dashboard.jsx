@@ -4,6 +4,7 @@ import Sidebar from "../components/Sidebar";
 import JobList from "../components/JobList";
 import CandidateForm from "../components/CandidateForm";
 import HiringRequestForm from "../components/HiringRequestForm";
+import AdminDashboard from "../components/AdminDashboard";
 function Dashboard() {
   const [view, setView] = useState("jobs");
   const [jobs, setJobs] = useState([]);
@@ -32,7 +33,9 @@ function Dashboard() {
         {view === "apply" && <CandidateForm setView={setView} />}
         {view === "hiring" && (
   <HiringRequestForm setView={setView} />
+  
 )}
+        {view === "admin" && <AdminDashboard />}
       </div>
     </div>
   );
