@@ -103,11 +103,11 @@ export default function App() {
   const formatText = (text) => {
     if (!text) return '';
     return text
-      // Replace **text** with bold styled tags
+      
       .replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-gray-900">$1</strong>')
-      // Replace *text* with italic styled tags
+      
       .replace(/\*(.*?)\*/g, '<em class="text-gray-600 italic">$1</em>')
-      // Replace line breaks with <br/>
+      
       .replace(/\n/g, '<br/>');
   };
 
@@ -133,7 +133,7 @@ export default function App() {
                 {msg.role === 'user' ? <User size={20} className="text-white" /> : <Bot size={20} className="text-white" />}
               </div>
               <div className={`p-4 rounded-2xl shadow-sm text-sm leading-relaxed ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-white text-gray-800 border border-gray-200 rounded-tl-none'}`}>
-                <div dangerouslySetInnerHTML={{ __html: formatText(msg.text).map(el => el.props.children).join('') }} />
+                <div dangerouslySetInnerHTML={{ __html: formatText(msg.text) }} />
               </div>
             </div>
           </div>
