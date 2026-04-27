@@ -20,7 +20,7 @@ function Dashboard() {
   };
 
   return (
-    <div className="flex bg-gray-100 min-h-screen">
+    <div className="flex bg-gradient-to-br from-blue-50 to-gray-100 min-h-screen">
       <Sidebar setView={setView} />
 
       <div className="flex-1 p-8">
