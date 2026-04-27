@@ -17,18 +17,18 @@ def get_intent(user_message: str) -> str:
     - view_jobs (User wants to see open positions)
     - raise_hiring_request (Hiring manager requesting new hire)
     - hr_admin_action (HR asking to show shortlisted/rejected candidates, or pending requests)
-    - general_faq (Asking about hiring process, documents required, response time, application status)
+    - check_status (User wants to check their job application status)
+    - general_faq (Asking about hiring process, documents required, response time)
     
     Message: "{user_message}"
     Output ONLY the intent name.
     """
     completion = groq_client.chat.completions.create(
-        model="llama-3.1-8b-instant", # <-- UPDATED MODEL HERE
+        model="llama-3.1-8b-instant",
         messages=[{"role": "user", "content": prompt}],
         temperature=0
     )
     return completion.choices[0].message.content.strip().lower()
-
 
 def is_valid_email(email):
     return re.match(r"[^@]+@[^@]+\.[^@]+", email)
@@ -121,6 +121,10 @@ async def process_message(session_id: str, message: str) -> str:
             session["intent"] = "raise_hiring_request"
             session["step"] = "ask_dept"
             return "I can help with that. Please enter the department name."
+        elif intent == "check_status":
+            session["intent"] = "check_status"
+            session["step"] = "ask_email"
+            return "I can help you check your application status! 📋 Please enter your registered **Email ID**."
 
         elif intent == "hr_admin_action":
             msg_lower = message.lower()
