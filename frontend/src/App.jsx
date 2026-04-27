@@ -1,26 +1,39 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
-import { Send, User, Bot, Briefcase, Users, FileText, Paperclip } from 'lucide-react';
+import { Send, User, Bot, Briefcase, Paperclip } from 'lucide-react';
 
 export default function App() {
+  const [currentRole, setCurrentRole] = useState('Candidate');
   const [messages, setMessages] = useState([
-    { role: 'bot', text: 'Hello! I am your HR Hiring Assistant. How can I help you today?' }
+    { role: 'bot', text: 'Hello! I am your HR Hiring Assistant. You are currently in **Candidate** mode. How can I help you today?' }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState('');
   
   const endOfMessagesRef = useRef(null);
-  const fileInputRef = useRef(null); 
+  const fileInputRef = useRef(null);
 
+  // Initialize session on load
   useEffect(() => {
     setSessionId(uuidv4());
   }, []);
 
+  // Auto-scroll to bottom
   useEffect(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Handle Role Switching
+  const handleRoleChange = (e) => {
+    const newRole = e.target.value;
+    setCurrentRole(newRole);
+    setSessionId(uuidv4()); // Reset backend session state machine!
+    setMessages([
+      { role: 'bot', text: `Switched to **${newRole}** mode. How can I assist you today?` }
+    ]);
+  };
 
   const sendMessage = async (e) => {
     e?.preventDefault();
@@ -45,12 +58,10 @@ export default function App() {
     }
   };
 
-  
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    
     setIsLoading(true);
     setMessages(prev => [...prev, { role: 'user', text: `📎 Uploading: ${file.name}...` }]);
 
@@ -59,21 +70,17 @@ export default function App() {
 
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
-      
-      
       const uploadRes = await axios.post(`${apiUrl}/upload`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
       const fileUrl = uploadRes.data.file_url;
       
-      
       const chatRes = await axios.post(`${apiUrl}/chat`, {
         session_id: sessionId,
         message: fileUrl 
       });
 
-      
       setMessages(prev => {
         const newMessages = [...prev];
         newMessages.pop(); 
@@ -103,16 +110,29 @@ export default function App() {
   const formatText = (text) => {
     if (!text) return '';
     return text
-      
       .replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-gray-900">$1</strong>')
-      
       .replace(/\*(.*?)\*/g, '<em class="text-gray-600 italic">$1</em>')
-      
       .replace(/\n/g, '<br/>');
+  };
+
+  // Dynamic Quick Replies based on selected role
+  const getQuickReplies = () => {
+    if (currentRole === 'Candidate') {
+      return ['View job openings', 'I want to apply for a job', 'Check application status', 'What is the hiring process?'];
+    }
+    if (currentRole === 'Hiring Manager') {
+      return ['I want to raise a hiring request'];
+    }
+    if (currentRole === 'HR Admin') {
+      return ['Show pending hiring requests', 'Show shortlisted candidates', 'Show rejected candidates'];
+    }
+    return [];
   };
 
   return (
     <div className="flex flex-col h-screen max-w-4xl mx-auto shadow-2xl bg-white border border-gray-200 sm:rounded-xl sm:my-4 font-sans">
+      
+      {/* Header with Role Switcher */}
       <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-blue-700 to-blue-500 text-white sm:rounded-t-xl">
         <div className="flex items-center space-x-3">
           <div className="bg-white p-2 rounded-full text-blue-600">
@@ -120,11 +140,26 @@ export default function App() {
           </div>
           <div>
             <h1 className="text-xl font-bold">HR Hiring Assistant</h1>
-            <p className="text-xs text-blue-100">Candidate, Manager & Admin Portal</p>
+            <p className="text-xs text-blue-100">Internal Support Bot</p>
           </div>
+        </div>
+        
+        {/* Role Switcher Dropdown */}
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-medium text-blue-100 uppercase tracking-wide">Role:</label>
+          <select 
+            value={currentRole} 
+            onChange={handleRoleChange}
+            className="bg-blue-800 border border-blue-600 text-white text-sm rounded-lg focus:ring-blue-300 focus:border-blue-300 block p-2 cursor-pointer outline-none"
+          >
+            <option value="Candidate">Candidate</option>
+            <option value="Hiring Manager">Hiring Manager</option>
+            <option value="HR Admin">HR Admin</option>
+          </select>
         </div>
       </div>
 
+      {/* Chat History */}
       <div className="flex-1 p-4 overflow-y-auto space-y-6 bg-[#f8fafc]">
         {messages.map((msg, idx) => (
           <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -148,12 +183,15 @@ export default function App() {
         <div ref={endOfMessagesRef} />
       </div>
 
-      {/* Action Chips */}
-      <div className="px-4 py-3 bg-white border-t border-gray-100 space-y-2">
+      {/* Dynamic Action Chips */}
+      <div className="px-4 py-3 bg-white border-t border-gray-100">
         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide items-center">
-            <span className="text-xs font-bold text-gray-400 uppercase tracking-wider mr-2 flex items-center gap-1"><User size={12}/> Candidate</span>
-            {['View job openings', 'I want to apply for a job', 'What is the hiring process?'].map((btn) => (
-            <button key={btn} onClick={() => handleQuickReply(btn)} className="whitespace-nowrap px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-full text-xs font-medium transition-colors">
+            {getQuickReplies().map((btn) => (
+            <button 
+              key={btn} 
+              onClick={() => handleQuickReply(btn)} 
+              className="whitespace-nowrap px-4 py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 rounded-full text-xs font-semibold transition-colors"
+            >
                 {btn}
             </button>
             ))}
@@ -162,8 +200,6 @@ export default function App() {
 
       {/* Input Form */}
       <form onSubmit={sendMessage} className="p-4 bg-white border-t sm:rounded-b-xl flex items-center gap-3">
-        
-        {/* Hidden File Input */}
         <input 
           type="file" 
           ref={fileInputRef} 
@@ -171,8 +207,6 @@ export default function App() {
           onChange={handleFileUpload}
           accept=".pdf,.doc,.docx"
         />
-        
-        {/* Attachment Button */}
         <button 
           type="button" 
           onClick={() => fileInputRef.current.click()} 
@@ -186,7 +220,7 @@ export default function App() {
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Type your message here..."
+          placeholder={`Type as ${currentRole}...`}
           className="flex-1 bg-gray-50 border border-gray-300 text-gray-800 rounded-full px-5 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-inner"
         />
         <button id="submitBtn" type="submit" disabled={isLoading} className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full flex-shrink-0 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed">
