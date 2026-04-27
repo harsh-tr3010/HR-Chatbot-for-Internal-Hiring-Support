@@ -16,8 +16,10 @@ def get_intent(user_message: str) -> str:
     - apply_job (User wants to apply for a job)
     - view_jobs (User wants to see open positions)
     - raise_hiring_request (Hiring manager requesting new hire)
-    - hr_admin_action (HR asking to show shortlisted/rejected candidates, or pending requests)
     - check_status (User wants to check their job application status)
+    - hr_admin_queries (HR asking to show shortlisted, rejected, awaiting interview, or pending requests)
+    - hr_find_candidate (HR asking to show candidate details or summary by email/phone)
+    - hr_generate_jd (HR asking to generate a job description)
     - general_faq (Asking about hiring process, documents required, response time)
     
     Message: "{user_message}"
@@ -34,7 +36,6 @@ def is_valid_email(email):
     return re.match(r"[^@]+@[^@]+\.[^@]+", email)
 
 def is_valid_phone(phone):
-    
     clean = re.sub(r'\D', '', phone)
     return len(clean) >= 10
 
@@ -46,7 +47,6 @@ def is_numeric(val):
         return False
 
 async def evaluate_candidate(data: dict):
-    
     job = await job_openings_collection.find_one({"title": {"$regex": data['preferred_role'], "$options": "i"}})
     if not job:
         return "Role not found in active database, but profile saved.", "Pending Review"
@@ -94,7 +94,6 @@ async def process_message(session_id: str, message: str) -> str:
             if not all_jobs: return "There are currently no job openings."
             
             display_jobs = random.sample(all_jobs, min(5, len(all_jobs)))
-            
             res = "Here are some of our **Top Open Roles** right now! 🌟\n\n"
             for j in display_jobs:
                 res += f"💼 **{j['title']}**\n"
@@ -103,7 +102,6 @@ async def process_message(session_id: str, message: str) -> str:
                 res += f"🛠️ **Skills:** {', '.join(j['skills_required'])}\n"
                 res += f"📝 *{j.get('description', 'Join our amazing team!')}*\n"
                 res += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                
             res += "Ready? Reply with **'I want to apply for a job'** to start your application! 🚀"
             return res
 
@@ -122,22 +120,37 @@ async def process_message(session_id: str, message: str) -> str:
             session["step"] = "ask_email"
             return "I can help you check your application status! 📋 Please enter your registered **Email ID**."
 
-        elif intent == "hr_admin_action":
+        
+        elif intent == "hr_admin_queries":
             msg_lower = message.lower()
             if "shortlisted" in msg_lower:
                 cands = await candidates_collection.find({"screening_status": "Shortlisted for next step"}).to_list(10)
                 if not cands: return "No shortlisted candidates found."
-                return "Shortlisted Candidates:\n" + "\n".join([f"• {c['full_name']} - {c['preferred_role']}" for c in cands])
+                return "✅ **Shortlisted Candidates:**\n" + "\n".join([f"• {c['full_name']} - {c['preferred_role']} ({c['email']})" for c in cands])
             elif "rejected" in msg_lower or "not suitable" in msg_lower:
                 cands = await candidates_collection.find({"screening_status": {"$regex": "Not suitable|Missing"}}).to_list(10)
                 if not cands: return "No rejected candidates found."
-                return "Rejected Candidates:\n" + "\n".join([f"• {c['full_name']} - {c['preferred_role']}" for c in cands])
+                return "❌ **Rejected Candidates:**\n" + "\n".join([f"• {c['full_name']} - {c['preferred_role']} ({c['email']})" for c in cands])
+            elif "awaiting" in msg_lower or "interview" in msg_lower:
+                cands = await candidates_collection.find({"screening_status": {"$regex": "interview|Awaiting", "$options": "i"}}).to_list(10)
+                if not cands: return "No candidates currently awaiting an interview."
+                return "⏳ **Awaiting Interview:**\n" + "\n".join([f"• {c['full_name']} - {c['preferred_role']} ({c['email']})" for c in cands])
             elif "pending" in msg_lower or "request" in msg_lower:
                 reqs = await hiring_requests_collection.find({}).to_list(10)
                 if not reqs: return "No pending hiring requests."
-                return "Pending Requests:\n" + "\n".join([f"• {r['role_required']} ({r['department']}) - {r['positions']} positions" for r in reqs])
+                return "📝 **Pending Hiring Requests:**\n" + "\n".join([f"• **{r['role_required']}** ({r['department']}) - {r['positions']} positions" for r in reqs])
             else:
-                return "I am your HR Admin Assistant. You can ask me to show shortlisted candidates, rejected candidates, or pending hiring requests."
+                return "Please specify what you'd like to see: Shortlisted, Rejected, Awaiting Interview, or Pending Requests."
+
+        elif intent == "hr_find_candidate":
+            session["intent"] = "hr_find_candidate"
+            session["step"] = "ask_identifier"
+            return "Please provide the candidate's **Email ID** or **Phone Number**."
+            
+        elif intent == "hr_generate_jd":
+            session["intent"] = "hr_generate_jd"
+            session["step"] = "ask_role"
+            return "I can help you generate a Job Description. What is the **Job Title**?"
 
         else: 
             sys_prompt = "You are an internal HR Assistant. Answer questions about the hiring process, documents required (ID, Resume, Certificates), or expected response time (usually 3-5 business days). Keep it brief and professional."
@@ -211,7 +224,6 @@ async def process_message(session_id: str, message: str) -> str:
             session["data"]["screening_status"] = status
             
             await candidates_collection.insert_one(session["data"])
-            
             sessions[session_id] = {"intent": None, "step": None, "data": {}}
             
             return f"Thank you. Based on your profile, you are **{status}**. Your application for **{session['data']['preferred_role']}** has been successfully saved and linked to your email ({session['data']['email']}).\n\n{summary}"
@@ -290,35 +302,59 @@ async def process_message(session_id: str, message: str) -> str:
             if not is_valid_phone(message): return "Please provide a valid phone number."
             session["data"]["phone"] = message
             
-            
-            profile_query = {
-                "email": session["data"]["email"],
-                "phone": session["data"]["phone"]
-            }
-            
-            
+            profile_query = {"email": session["data"]["email"], "phone": session["data"]["phone"]}
             applications = await candidates_collection.find(profile_query).to_list(length=10)
-            
-            
             sessions[session_id] = {"intent": None, "step": None, "data": {}}
             
             if applications:
-                
                 name = applications[0].get("full_name", "Candidate")
-                
                 res = f"**Application Forms Found for {name}** 🎉\n\n"
-                
-                
                 for idx, app in enumerate(applications, 1):
                     role = app.get("preferred_role", "Unknown Role")
                     status = app.get("screening_status", "Pending HR Review")
-                    res += f"**{idx}. 💼 Role:** {role}\n"
-                    res += f"   📊 **Status:** {status}\n"
-                    res += "   ━━━━━━━━━━━━━━━━━━━━\n"
-                    
+                    res += f"**{idx}. 💼 Role:** {role}\n   📊 **Status:** {status}\n   ━━━━━━━━━━━━━━━━━━━━\n"
                 res += "\nOur team will contact you soon regarding the next steps!"
                 return res
             else:
-                return "❌ **Record Not Found.** I couldn't find any applications matching that Email and Phone Number in our system. Please make sure you entered the exact details you used to apply."
+                return "❌ **Record Not Found.** Please make sure you entered the exact details you used to apply."
+
+    
+    if session["intent"] == "hr_find_candidate":
+        step = session["step"]
+        if step == "ask_identifier":
+            session["data"]["identifier"] = message
+            
+            cand = await candidates_collection.find_one({
+                "$or": [{"email": message}, {"phone": message}]
+            })
+            
+            sessions[session_id] = {"intent": None, "step": None, "data": {}}
+            
+            if cand:
+                return f"**Candidate Details & Summary** 📄\n\n👤 **Name:** {cand.get('full_name')}\n📧 **Email:** {cand.get('email')}\n📞 **Phone:** {cand.get('phone')}\n📍 **Location:** {cand.get('location')}\n💼 **Role Applied:** {cand.get('preferred_role')}\n🎓 **Exp:** {cand.get('total_experience')} yrs\n🛠️ **Skills:** {cand.get('skills')}\n💰 **Expected CTC:** {cand.get('expected_ctc')}\n📊 **Screening Status:** **{cand.get('screening_status')}**\n🔗 **Resume:** {cand.get('resume_link')}"
+            else:
+                return "❌ No candidate found with that email or phone number."
+
+    
+    if session["intent"] == "hr_generate_jd":
+        step = session["step"]
+        if step == "ask_role":
+            session["data"]["jd_role"] = message
+            session["step"] = "ask_skills"
+            return "What are the key skills required for this role?"
+        elif step == "ask_skills":
+            session["data"]["jd_skills"] = message
+            session["step"] = "ask_exp"
+            return "What is the required experience level (in years)?"
+        elif step == "ask_exp":
+            prompt = f"Generate a highly professional, engaging, and concise Job Description for a '{session['data']['jd_role']}'. Required Skills: {session['data']['jd_skills']}. Required Experience: {message} years. Include brief sections for Responsibilities and Requirements. Do not make it overly long."
+            
+            comp = groq_client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[{"role": "system", "content": "You are an expert HR copywriter."}, {"role": "user", "content": prompt}]
+            )
+            
+            sessions[session_id] = {"intent": None, "step": None, "data": {}}
+            return f"**Here is your AI-Generated Job Description:** ✨\n\n{comp.choices[0].message.content}"
 
     return "I didn't quite understand. You can ask to view jobs, apply for a job, raise a hiring request, or check shortlisted candidates."
