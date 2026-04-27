@@ -13,8 +13,55 @@ function Chatbot() {
   const [resumeFile, setResumeFile] = useState(null);
   const [resumeLink, setResumeLink] = useState("");
 
+  const [mode, setMode] = useState(null);
+  const [step, setStep] = useState(0);
+
+  const [hiringData, setHiringData] = useState({
+    department: "",
+    jobTitle: "",
+    positions: "",
+    experience: "",
+    skills: "",
+    location: "",
+    budget: "",
+    manager: "",
+    urgency: "",
+    reason: "",
+    type: ""
+  });
+
+  const hiringQuestions = [
+    "Please enter Department Name",
+    "Job Title?",
+    "Number of Positions Required?",
+    "Required Experience?",
+    "Required Skills?",
+    "Job Location?",
+    "Budget Range?",
+    "Reporting Manager?",
+    "Urgency Level?",
+    "Reason for Hiring?",
+    "Replacement or New Position?"
+  ];
+
   const handleResumeUpload = (e) => {
     setResumeFile(e.target.files[0]);
+  };
+
+  const hiringSummary = (data) => {
+    return `✅ Hiring Request Submitted Successfully
+
+Department: ${data.department}
+Job Title: ${data.jobTitle}
+Positions: ${data.positions}
+Experience: ${data.experience}
+Skills: ${data.skills}
+Location: ${data.location}
+Budget: ${data.budget}
+Manager: ${data.manager}
+Urgency: ${data.urgency}
+Reason: ${data.reason}
+Type: ${data.type}`;
   };
 
   const sendMessage = async () => {
@@ -29,6 +76,61 @@ function Chatbot() {
     setMessages(newMessages);
 
     const msg = input.toLowerCase();
+
+    // Hiring Request Flow Start
+    if (msg.includes("hiring request") && mode !== "hiring") {
+      setMode("hiring");
+      setStep(0);
+
+      setMessages([
+        ...newMessages,
+        {
+          sender: "bot",
+          text: hiringQuestions[0]
+        }
+      ]);
+
+      setInput("");
+      return;
+    }
+
+    // Hiring Flow Continue
+    if (mode === "hiring") {
+      const fields = Object.keys(hiringData);
+
+      const updated = {
+        ...hiringData,
+        [fields[step]]: input
+      };
+
+      setHiringData(updated);
+
+      if (step < hiringQuestions.length - 1) {
+        setMessages([
+          ...newMessages,
+          {
+            sender: "bot",
+            text: hiringQuestions[step + 1]
+          }
+        ]);
+
+        setStep(step + 1);
+      } else {
+        setMessages([
+          ...newMessages,
+          {
+            sender: "bot",
+            text: hiringSummary(updated)
+          }
+        ]);
+
+        setMode(null);
+        setStep(0);
+      }
+
+      setInput("");
+      return;
+    }
 
     try {
       // Candidate Apply Flow
@@ -67,7 +169,7 @@ function Chatbot() {
         ]);
       }
 
-      // Groq Chat API
+      // AI Chat Response
       else {
         const res = await axios.post(
           "http://127.0.0.1:8000/chat",
@@ -105,13 +207,12 @@ function Chatbot() {
           HireFlow AI - HR Hiring Assistant
         </div>
 
-        {/* Chat Area */}
+        {/* Chat */}
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
-
           {messages.map((msg, i) => (
             <div
               key={i}
-              className={`max-w-[75%] px-4 py-3 rounded-2xl ${
+              className={`max-w-[75%] px-4 py-3 rounded-2xl whitespace-pre-line ${
                 msg.sender === "user"
                   ? "ml-auto bg-blue-600 text-white"
                   : "bg-gray-100 text-gray-800"
@@ -120,14 +221,11 @@ function Chatbot() {
               {msg.text}
             </div>
           ))}
-
         </div>
 
         {/* Resume Upload */}
-        <div className="px-4 pb-3 space-y-3">
-
+        <div className="px-4 pb-3">
           <div className="bg-gray-50 border rounded-2xl p-4">
-
             <p className="font-medium mb-2">
               Upload Resume or Add Resume Link
             </p>
@@ -148,19 +246,14 @@ function Chatbot() {
             <input
               placeholder="Resume Link (Drive URL)"
               value={resumeLink}
-              onChange={(e) =>
-                setResumeLink(e.target.value)
-              }
+              onChange={(e) => setResumeLink(e.target.value)}
               className="w-full border rounded-xl px-4 py-2"
             />
-
           </div>
-
         </div>
 
         {/* Quick Buttons */}
         <div className="px-4 pb-3 flex flex-wrap gap-2">
-
           <button
             onClick={() => setInput("Show jobs")}
             className="bg-gray-200 px-4 py-2 rounded-full"
@@ -181,12 +274,10 @@ function Chatbot() {
           >
             Hiring Request
           </button>
-
         </div>
 
         {/* Input */}
         <div className="border-t p-4 flex gap-3">
-
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -200,7 +291,6 @@ function Chatbot() {
           >
             Send
           </button>
-
         </div>
 
       </div>
