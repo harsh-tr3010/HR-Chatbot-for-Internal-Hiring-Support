@@ -3,14 +3,41 @@ import axios from "axios";
 
 function App() {
   const [jobs, setJobs] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+
+  const [formData, setFormData] = useState({
+    fullName: "",
+    email: "",
+    phone: "",
+    location: "",
+    qualification: "",
+    totalExperience: "",
+    skills: "",
+    preferredRole: ""
+  });
+
+  const API = "http://127.0.0.1:5000";
 
   const fetchJobs = async () => {
-    try {
-      const res = await axios.get("http://127.0.0.1:5000/api/jobs");
-      setJobs(res.data);
-    } catch (error) {
-      console.log(error);
-    }
+    const res = await axios.get(`${API}/api/jobs`);
+    setJobs(res.data);
+  };
+
+  const handleChange = (e) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value
+    });
+  };
+
+  const submitForm = async () => {
+    await axios.post(`${API}/api/candidates/apply`, {
+      ...formData,
+      skills: formData.skills.split(",")
+    });
+
+    alert("Application Submitted Successfully");
+    setShowForm(false);
   };
 
   return (
@@ -21,47 +48,89 @@ function App() {
         <h1 className="text-2xl font-bold mb-8">HireFlow AI</h1>
 
         <ul className="space-y-4">
-          <li className="cursor-pointer">Dashboard</li>
+          <li onClick={fetchJobs} className="cursor-pointer">Jobs</li>
           <li
-            className="cursor-pointer hover:text-yellow-300"
-            onClick={fetchJobs}
+            onClick={() => setShowForm(true)}
+            className="cursor-pointer"
           >
-            Jobs
+            Apply Job
           </li>
         </ul>
       </div>
 
       {/* Main */}
       <div className="flex-1 p-8">
+
         <h2 className="text-3xl font-bold mb-6">
           HR Hiring Assistant
         </h2>
 
-        <button
-          onClick={fetchJobs}
-          className="bg-blue-600 text-white px-5 py-2 rounded-lg mb-6"
-        >
-          View Jobs
-        </button>
+        {/* Candidate Form */}
+        {showForm && (
+          <div className="bg-white p-6 rounded-xl shadow mb-6">
+            <h3 className="text-xl font-bold mb-4">
+              Apply for Job
+            </h3>
 
+            <div className="grid grid-cols-2 gap-4">
+
+              <input name="fullName" placeholder="Full Name"
+                className="border p-2"
+                onChange={handleChange} />
+
+              <input name="email" placeholder="Email"
+                className="border p-2"
+                onChange={handleChange} />
+
+              <input name="phone" placeholder="Phone"
+                className="border p-2"
+                onChange={handleChange} />
+
+              <input name="location" placeholder="Location"
+                className="border p-2"
+                onChange={handleChange} />
+
+              <input name="qualification" placeholder="Qualification"
+                className="border p-2"
+                onChange={handleChange} />
+
+              <input name="totalExperience" placeholder="Experience"
+                className="border p-2"
+                onChange={handleChange} />
+
+              <input name="skills" placeholder="Skills comma separated"
+                className="border p-2"
+                onChange={handleChange} />
+
+              <input name="preferredRole" placeholder="Preferred Role"
+                className="border p-2"
+                onChange={handleChange} />
+
+            </div>
+
+            <button
+              onClick={submitForm}
+              className="bg-green-600 text-white px-5 py-2 mt-4 rounded"
+            >
+              Submit Application
+            </button>
+          </div>
+        )}
+
+        {/* Jobs */}
         <div className="grid grid-cols-2 gap-6">
           {jobs.map((job) => (
-            <div
-              key={job._id}
-              className="bg-white p-5 rounded-xl shadow"
-            >
+            <div key={job._id}
+              className="bg-white p-5 rounded-xl shadow">
               <h3 className="text-xl font-bold">{job.title}</h3>
               <p>{job.department}</p>
               <p>{job.location}</p>
-              <p>{job.experience} Years Exp</p>
-              <p className="text-sm text-gray-500">
-                {job.skills.join(", ")}
-              </p>
+              <p>{job.experience} Years</p>
             </div>
           ))}
         </div>
-      </div>
 
+      </div>
     </div>
   );
 }
