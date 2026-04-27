@@ -11,6 +11,10 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+app.use("/api/jobs", require("./routes/jobRoutes"));
+app.use("/api/candidates", require("./routes/candidateRoutes"));
+app.use("/api/hiring", require("./routes/hiringRoutes"));
+
 app.get("/", (req, res) => {
   res.send("HireFlow AI Backend Running");
 });
