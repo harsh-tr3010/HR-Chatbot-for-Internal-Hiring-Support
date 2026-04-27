@@ -1,7 +1,7 @@
 import { useState } from "react";
 import axios from "axios";
 
-function CandidateForm() {
+function CandidateForm({ setView })  {
   const [form, setForm] = useState({
     fullName: "",
     email: "",
@@ -53,7 +53,13 @@ function CandidateForm() {
       data
     );
 
-    alert("Application Submitted Successfully");
+   alert("Application Submitted Successfully");
+
+setTimeout(() => {
+    setForm(initialState);
+setResumeFile(null);
+  setView("jobs");
+}, 800);
 
   } catch (error) {
     alert("Submission Failed");

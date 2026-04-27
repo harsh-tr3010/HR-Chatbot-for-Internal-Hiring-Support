@@ -29,7 +29,7 @@ function Dashboard() {
         </h1>
 
         {view === "jobs" && <JobList jobs={jobs} />}
-        {view === "apply" && <CandidateForm />}
+        {view === "apply" && <CandidateForm setView={setView} />}
       </div>
     </div>
   );
