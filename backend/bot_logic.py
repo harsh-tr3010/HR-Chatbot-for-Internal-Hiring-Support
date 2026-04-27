@@ -212,6 +212,27 @@ async def process_message(session_id: str, message: str) -> str:
             session["data"]["screening_status"] = status
             
             
+            profile_query = {
+                "email": session["data"]["email"],
+                "phone": session["data"]["phone"]
+            }
+            
+            
+            profile_update = {"$set": session["data"]}
+            
+            
+            await candidates_collection.update_one(profile_query, profile_update, upsert=True)
+            
+            
+            sessions[session_id] = {"intent": None, "step": None, "data": {}}
+            
+            return f"Thank you. Based on your profile, you are **{status}**. Your candidate profile has been successfully saved and linked to your email ({session['data']['email']}).\n\n{summary}"
+            
+            
+            summary, status = await evaluate_candidate(session["data"])
+            session["data"]["screening_status"] = status
+            
+            
             await candidates_collection.insert_one(session["data"])
             
             sessions[session_id] = {"intent": None, "step": None, "data": {}}
