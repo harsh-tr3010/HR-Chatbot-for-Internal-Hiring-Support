@@ -8,42 +8,15 @@ function Chatbot() {
       text: "Hello! I am your HR Hiring Assistant. How can I help you today?"
     }
   ]);
-  const [resumeFile, setResumeFile] = useState(null);
-const [resumeLink, setResumeLink] = useState("");
 
   const [input, setInput] = useState("");
+  const [resumeFile, setResumeFile] = useState(null);
+  const [resumeLink, setResumeLink] = useState("");
+
   const handleResumeUpload = (e) => {
-  setResumeFile(e.target.files[0]);
-};
-const formData = new FormData();
+    setResumeFile(e.target.files[0]);
+  };
 
-Object.keys(updated).forEach((key) => {
-  formData.append(key, updated[key]);
-});
-
-formData.append("resumeLink", resumeLink);
-
-if (resumeFile) {
-  formData.append("resume", resumeFile);
-}
-
-try {
-  const res = await axios.post(
-    "http://127.0.0.1:8000/apply",
-    formData
-  );
-
-  newMsgs.push({
-    sender: "bot",
-    text: `✅ ${res.data.screening_result}`
-  });
-
-} catch (error) {
-  newMsgs.push({
-    sender: "bot",
-    text: "⚠ Failed to submit application."
-  });
-}
   const sendMessage = async () => {
     if (!input.trim()) return;
 
@@ -52,129 +25,184 @@ try {
       text: input
     };
 
-    let botReply =
-      "I can help with jobs, applications, hiring requests, and HR support.";
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
 
     const msg = input.toLowerCase();
 
-    if (msg.includes("job")) {
-      botReply = "Use View Jobs to see all openings.";
-    }
+    try {
+      // Candidate Apply Flow
+      if (msg.includes("apply")) {
+        const formData = new FormData();
 
-    if (msg.includes("apply")) {
-      botReply = "Please open Apply Job to submit your profile.";
-    }
+        formData.append("fullName", "Harsh");
+        formData.append("email", "harsh@gmail.com");
+        formData.append("phone", "9876543210");
+        formData.append("location", "Gurgaon");
+        formData.append("qualification", "B.Tech");
+        formData.append("totalExperience", "2");
+        formData.append("relevantExperience", "2");
+        formData.append("skills", "Python,React,AI");
+        formData.append("currentCTC", "4");
+        formData.append("expectedCTC", "6");
+        formData.append("noticePeriod", "30 Days");
+        formData.append("preferredRole", "AI Engineer");
+        formData.append("resumeLink", resumeLink);
 
-    if (msg.includes("hiring")) {
-      botReply = "Please open Hiring Request to raise a request.";
-    }
+        if (resumeFile) {
+          formData.append("resume", resumeFile);
+        }
 
-    if (msg.includes("shortlisted")) {
-      botReply = "Open HR Support to view shortlisted candidates.";
-    }
+        const res = await axios.post(
+          "http://127.0.0.1:8000/apply",
+          formData
+        );
 
-    setMessages([
-      ...messages,
-      userMsg,
-      { sender: "bot", text: botReply }
-    ]);
+        setMessages([
+          ...newMessages,
+          {
+            sender: "bot",
+            text: `✅ ${res.data.screening_result}`
+          }
+        ]);
+      }
+
+      // Groq Chat API
+      else {
+        const res = await axios.post(
+          "http://127.0.0.1:8000/chat",
+          { message: input }
+        );
+
+        setMessages([
+          ...newMessages,
+          {
+            sender: "bot",
+            text: res.data.reply
+          }
+        ]);
+      }
+    } catch (error) {
+      setMessages([
+        ...newMessages,
+        {
+          sender: "bot",
+          text: "⚠ Something went wrong."
+        }
+      ]);
+    }
 
     setInput("");
   };
 
   return (
-    <div className="bg-white rounded-3xl shadow-xl h-[85vh] flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-white flex justify-center items-center p-4">
 
-      {/* Header */}
-      <div className="p-5 border-b font-bold text-xl">
-        HR Hiring Assistant
-      </div>
+      <div className="w-full max-w-4xl bg-white rounded-3xl shadow-2xl h-[90vh] flex flex-col">
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-4">
+        {/* Header */}
+        <div className="bg-blue-600 text-white p-5 text-xl font-bold rounded-t-3xl">
+          HireFlow AI - HR Hiring Assistant
+        </div>
 
-        {messages.map((msg, i) => (
-          <div
-            key={i}
-            className={`max-w-[70%] px-4 py-3 rounded-2xl ${
-              msg.sender === "user"
-                ? "ml-auto bg-blue-600 text-white"
-                : "bg-gray-100"
-            }`}
-          >
-            {msg.text}
+        {/* Chat Area */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+
+          {messages.map((msg, i) => (
+            <div
+              key={i}
+              className={`max-w-[75%] px-4 py-3 rounded-2xl ${
+                msg.sender === "user"
+                  ? "ml-auto bg-blue-600 text-white"
+                  : "bg-gray-100 text-gray-800"
+              }`}
+            >
+              {msg.text}
+            </div>
+          ))}
+
+        </div>
+
+        {/* Resume Upload */}
+        <div className="px-4 pb-3 space-y-3">
+
+          <div className="bg-gray-50 border rounded-2xl p-4">
+
+            <p className="font-medium mb-2">
+              Upload Resume or Add Resume Link
+            </p>
+
+            <input
+              type="file"
+              accept=".pdf,.doc,.docx"
+              onChange={handleResumeUpload}
+              className="w-full mb-2"
+            />
+
+            {resumeFile && (
+              <p className="text-green-600 text-sm mb-2">
+                Selected: {resumeFile.name}
+              </p>
+            )}
+
+            <input
+              placeholder="Resume Link (Drive URL)"
+              value={resumeLink}
+              onChange={(e) =>
+                setResumeLink(e.target.value)
+              }
+              className="w-full border rounded-xl px-4 py-2"
+            />
+
           </div>
-        ))}
 
-      </div>
+        </div>
 
-      {/* Quick Replies */}
-      <div className="px-4 pb-3 flex flex-wrap gap-2">
-        <button
-          onClick={() => setInput("Show jobs")}
-          className="bg-gray-200 px-3 py-1 rounded-full"
-        >
-          Show Jobs
-        </button>
+        {/* Quick Buttons */}
+        <div className="px-4 pb-3 flex flex-wrap gap-2">
 
-        <button
-          onClick={() => setInput("Apply for job")}
-          className="bg-gray-200 px-3 py-1 rounded-full"
-        >
-          Apply
-        </button>
+          <button
+            onClick={() => setInput("Show jobs")}
+            className="bg-gray-200 px-4 py-2 rounded-full"
+          >
+            Show Jobs
+          </button>
 
-        <button
-          onClick={() => setInput("Hiring request")}
-          className="bg-gray-200 px-3 py-1 rounded-full"
-        >
-          Hiring Request
-        </button>
-      </div>
+          <button
+            onClick={() => setInput("Apply for job")}
+            className="bg-gray-200 px-4 py-2 rounded-full"
+          >
+            Apply
+          </button>
 
-      {/* Input */}
-      <div className="p-4 border-t flex gap-3">
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Type your message..."
-          className="flex-1 border rounded-xl px-4 py-3"
-        />
-        {step === 12 && (
-  <div className="bg-gray-50 border rounded-2xl p-4 space-y-3">
+          <button
+            onClick={() => setInput("Hiring request")}
+            className="bg-gray-200 px-4 py-2 rounded-full"
+          >
+            Hiring Request
+          </button>
 
-    <p className="font-medium">
-      Upload Resume or Add Resume Link
-    </p>
+        </div>
 
-    <input
-      type="file"
-      accept=".pdf,.doc,.docx"
-      onChange={handleResumeUpload}
-      className="w-full"
-    />
+        {/* Input */}
+        <div className="border-t p-4 flex gap-3">
 
-    {resumeFile && (
-      <p className="text-green-600 text-sm">
-        Selected: {resumeFile.name}
-      </p>
-    )}
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Type your message..."
+            className="flex-1 border rounded-xl px-4 py-3"
+          />
 
-    <input
-      placeholder="Resume Link (Drive URL)"
-      value={resumeLink}
-      onChange={(e) => setResumeLink(e.target.value)}
-      className="w-full border rounded-xl px-4 py-2"
-    />
-  </div>
-)}
+          <button
+            onClick={sendMessage}
+            className="bg-blue-600 text-white px-6 rounded-xl"
+          >
+            Send
+          </button>
 
-        <button
-          onClick={sendMessage}
-          className="bg-blue-600 text-white px-6 rounded-xl"
-        >
-          Send
-        </button>
+        </div>
+
       </div>
 
     </div>
