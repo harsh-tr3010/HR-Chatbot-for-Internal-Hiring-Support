@@ -110,15 +110,32 @@ function CandidateForm() {
 
         <input name="preferredRole" value={form.preferredRole} onChange={handleChange} placeholder="Preferred Role" className={inputStyle} />
 
-        <div className="md:col-span-2">
-          <input
-            name="resumeLink"
-            value={form.resumeLink}
-            onChange={handleChange}
-            placeholder="Resume Link / Drive URL"
-            className={inputStyle}
-          />
-        </div>
+        <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+
+  <input
+    name="resumeLink"
+    value={form.resumeLink}
+    onChange={handleChange}
+    placeholder="Resume Link / Drive URL"
+    className={inputStyle}
+  />
+
+  <div className="border border-dashed border-gray-400 rounded-xl p-3 bg-gray-50">
+    <input
+      type="file"
+      accept=".pdf,.doc,.docx"
+      onChange={handleFileChange}
+      className="w-full"
+    />
+
+    {resumeFile && (
+      <p className="text-sm text-green-600 mt-2">
+        Selected: {resumeFile.name}
+      </p>
+    )}
+  </div>
+
+</div>
 
       </div>
 
