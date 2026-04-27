@@ -1,4 +1,5 @@
 import { useState } from "react";
+import axios from "axios";
 
 function Chatbot() {
   const [messages, setMessages] = useState([
@@ -7,10 +8,43 @@ function Chatbot() {
       text: "Hello! I am your HR Hiring Assistant. How can I help you today?"
     }
   ]);
+  const [resumeFile, setResumeFile] = useState(null);
+const [resumeLink, setResumeLink] = useState("");
 
   const [input, setInput] = useState("");
+  const handleResumeUpload = (e) => {
+  setResumeFile(e.target.files[0]);
+};
+const formData = new FormData();
 
-  const sendMessage = () => {
+Object.keys(updated).forEach((key) => {
+  formData.append(key, updated[key]);
+});
+
+formData.append("resumeLink", resumeLink);
+
+if (resumeFile) {
+  formData.append("resume", resumeFile);
+}
+
+try {
+  const res = await axios.post(
+    "http://127.0.0.1:8000/apply",
+    formData
+  );
+
+  newMsgs.push({
+    sender: "bot",
+    text: `✅ ${res.data.screening_result}`
+  });
+
+} catch (error) {
+  newMsgs.push({
+    sender: "bot",
+    text: "⚠ Failed to submit application."
+  });
+}
+  const sendMessage = async () => {
     if (!input.trim()) return;
 
     const userMsg = {
@@ -106,6 +140,34 @@ function Chatbot() {
           placeholder="Type your message..."
           className="flex-1 border rounded-xl px-4 py-3"
         />
+        {step === 12 && (
+  <div className="bg-gray-50 border rounded-2xl p-4 space-y-3">
+
+    <p className="font-medium">
+      Upload Resume or Add Resume Link
+    </p>
+
+    <input
+      type="file"
+      accept=".pdf,.doc,.docx"
+      onChange={handleResumeUpload}
+      className="w-full"
+    />
+
+    {resumeFile && (
+      <p className="text-green-600 text-sm">
+        Selected: {resumeFile.name}
+      </p>
+    )}
+
+    <input
+      placeholder="Resume Link (Drive URL)"
+      value={resumeLink}
+      onChange={(e) => setResumeLink(e.target.value)}
+      className="w-full border rounded-xl px-4 py-2"
+    />
+  </div>
+)}
 
         <button
           onClick={sendMessage}
