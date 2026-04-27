@@ -101,11 +101,14 @@ export default function App() {
   };
 
   const formatText = (text) => {
-    return text.split('\n').map((str, idx) => (
-      <span key={idx} className="block mb-1">
-        {str.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')}
-      </span>
-    ));
+    if (!text) return '';
+    return text
+      // Replace **text** with bold styled tags
+      .replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-gray-900">$1</strong>')
+      // Replace *text* with italic styled tags
+      .replace(/\*(.*?)\*/g, '<em class="text-gray-600 italic">$1</em>')
+      // Replace line breaks with <br/>
+      .replace(/\n/g, '<br/>');
   };
 
   return (

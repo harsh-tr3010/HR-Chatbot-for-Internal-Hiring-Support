@@ -1,5 +1,6 @@
 import os
 import re
+import random
 from groq import Groq
 from database import job_openings_collection, candidates_collection, hiring_requests_collection
 from dotenv import load_dotenv
@@ -28,7 +29,7 @@ def get_intent(user_message: str) -> str:
     )
     return completion.choices[0].message.content.strip().lower()
 
-# --- VALIDATION HELPERS ---
+
 def is_valid_email(email):
     return re.match(r"[^@]+@[^@]+\.[^@]+", email)
 
@@ -44,7 +45,7 @@ def is_numeric(val):
     except ValueError:
         return False
 
-# --- SCREENING LOGIC ---
+
 async def evaluate_candidate(data: dict):
     # Fetch job safely
     job = await job_openings_collection.find_one({"title": {"$regex": data['preferred_role'], "$options": "i"}})
@@ -56,11 +57,11 @@ async def evaluate_candidate(data: dict):
     req_skills = [s.lower() for s in job["skills_required"]]
     cand_skills = [s.strip().lower() for s in data["skills"].split(",")]
 
-    # Skill match percentage
+    
     matched_skills = [s for s in cand_skills if any(req in s or s in req for req in req_skills)]
     skill_match_percent = len(matched_skills) / len(req_skills) if req_skills else 1.0
 
-    # Logic from requirements
+    
     if cand_exp >= req_exp and skill_match_percent >= 0.6:
         status = "Shortlisted for next step" 
     elif cand_exp < req_exp:
@@ -86,18 +87,30 @@ async def process_message(session_id: str, message: str) -> str:
     
     session = sessions[session_id]
 
-    # --- 1. DETERMINE INTENT ---
+    
     if not session["intent"]:
         intent = get_intent(message)
         
         if intent == "view_jobs":
             jobs_cursor = job_openings_collection.find({})
-            jobs = await jobs_cursor.to_list(length=20)
-            if not jobs: return "There are currently no job openings."
-            res = "Here are the current job openings:\n"
-            for j in jobs:
-                res += f"• **{j['title']}** ({j['department']}) | {j['location']} | Exp: {j['experience_required']} yrs | Skills: {', '.join(j['skills_required'])}\n"
+            all_jobs = await jobs_cursor.to_list(length=50)
+            if not all_jobs: return "There are currently no job openings."
+            
+            
+            display_jobs = random.sample(all_jobs, min(5, len(all_jobs)))
+            
+            res = "Here are some of our **Top Open Roles** right now! 🌟\n\n"
+            for j in display_jobs:
+                res += f"💼 **{j['title']}**\n"
+                res += f"🏢 *{j['department']}* | 📍 {j['location']}\n"
+                res += f"🎓 **Exp:** {j['experience_required']}+ years | ⏳ **Type:** {j.get('employment_type', 'Full-time')}\n"
+                res += f"🛠️ **Skills:** {', '.join(j['skills_required'])}\n"
+                res += f"📝 *{j.get('description', 'Join our amazing team!')}*\n"
+                res += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                
+            res += "Ready? Reply with **'I want to apply for a job'** to start your application! 🚀"
             return res
+
 
         elif intent == "apply_job":
             session["intent"] = "apply_job"
@@ -126,7 +139,7 @@ async def process_message(session_id: str, message: str) -> str:
             else:
                 return "I am your HR Admin Assistant. You can ask me to show shortlisted candidates, rejected candidates, or pending hiring requests."
 
-        else: # general_faq
+        else: 
             sys_prompt = "You are an internal HR Assistant. Answer questions about the hiring process, documents required (ID, Resume, Certificates), or expected response time (usually 3-5 business days). Keep it brief and professional."
             comp = groq_client.chat.completions.create(
                 model="llama-3.1-8b-instant", # <-- UPDATED MODEL HERE
@@ -134,7 +147,7 @@ async def process_message(session_id: str, message: str) -> str:
             )
             return comp.choices[0].message.content
 
-    # --- 2. CANDIDATE FLOW (Step-by-step) ---
+    
     if session["intent"] == "apply_job":
         step = session["step"]
         if step == "ask_role":
@@ -194,17 +207,17 @@ async def process_message(session_id: str, message: str) -> str:
         elif step == "ask_resume":
             session["data"]["resume_link"] = message
             
-            # Execute Screening
+            
             summary, status = await evaluate_candidate(session["data"])
             session["data"]["screening_status"] = status
             
-            # Save to DB
+            
             await candidates_collection.insert_one(session["data"])
             
             sessions[session_id] = {"intent": None, "step": None, "data": {}}
             return f"Thank you. Based on your profile, you are **{status}**. Your application has been submitted successfully.\n\n{summary}"
 
-    # --- 3. HIRING MANAGER FLOW (Step-by-step) ---
+    
     if session["intent"] == "raise_hiring_request":
         step = session["step"]
         if step == "ask_dept":
@@ -251,7 +264,7 @@ async def process_message(session_id: str, message: str) -> str:
         elif step == "ask_replacement":
             session["data"]["position_type"] = message
             
-            # Save to DB
+            
             await hiring_requests_collection.insert_one(session["data"])
             
             summary = f"""
