@@ -12,6 +12,12 @@ function Sidebar({ setView }) {
         >
           View Jobs
         </li>
+        <li
+  className="cursor-pointer"
+  onClick={() => setView("hiring")}
+>
+  Hiring Request
+</li>
 
         <li
           className="cursor-pointer"

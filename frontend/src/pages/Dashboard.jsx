@@ -3,7 +3,7 @@ import axios from "axios";
 import Sidebar from "../components/Sidebar";
 import JobList from "../components/JobList";
 import CandidateForm from "../components/CandidateForm";
-
+import HiringRequestForm from "../components/HiringRequestForm";
 function Dashboard() {
   const [view, setView] = useState("jobs");
   const [jobs, setJobs] = useState([]);
@@ -30,6 +30,9 @@ function Dashboard() {
 
         {view === "jobs" && <JobList jobs={jobs} />}
         {view === "apply" && <CandidateForm setView={setView} />}
+        {view === "hiring" && (
+  <HiringRequestForm setView={setView} />
+)}
       </div>
     </div>
   );
