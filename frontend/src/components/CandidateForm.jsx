@@ -17,6 +17,7 @@ function CandidateForm() {
     preferredRole: "",
     resumeLink: ""
   });
+  const [resumeFile, setResumeFile] = useState(null);
 
   const [loading, setLoading] = useState(false);
 
@@ -26,6 +27,10 @@ function CandidateForm() {
       [e.target.name]: e.target.value
     });
   };
+ 
+  const handleFileChange = (e) => {
+  setResumeFile(e.target.files[0]);
+};
 
   const submitForm = async () => {
     try {
