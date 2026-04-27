@@ -3,6 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from models import ChatRequest, ChatResponse
 from bot_logic import process_message
+import io
+import csv
+from fastapi.responses import StreamingResponse
+from database import candidates_collection
 from database import seed_data, chat_history_collection
 import datetime
 import os
@@ -65,3 +69,34 @@ async def chat_endpoint(request: ChatRequest):
     })
 
     return ChatResponse(response=bot_reply)
+
+@app.get("/export/candidates")
+async def export_candidates():
+    candidates = await candidates_collection.find({}).to_list(1000)
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    
+    writer.writerow(["Name", "Email", "Phone", "Role Applied", "Experience (Yrs)", "Skills", "Expected CTC", "Status"])
+    
+    
+    for c in candidates:
+        writer.writerow([
+            c.get("full_name", ""), 
+            c.get("email", ""), 
+            c.get("phone", ""),
+            c.get("preferred_role", ""), 
+            c.get("total_experience", ""),
+            c.get("skills", ""), 
+            c.get("expected_ctc", ""),
+            c.get("screening_status", "")
+        ])
+        
+    output.seek(0)
+    
+    return StreamingResponse(
+        output, 
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=candidates_export.csv"}
+    )

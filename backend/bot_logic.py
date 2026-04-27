@@ -1,6 +1,7 @@
 import os
 import re
 import random
+import asyncio
 from groq import Groq
 from database import job_openings_collection, candidates_collection, hiring_requests_collection
 from dotenv import load_dotenv
@@ -45,6 +46,17 @@ def is_numeric(val):
         return True
     except ValueError:
         return False
+async def send_hr_email_notification(candidate_name, role, status):
+    """
+    BONUS FEATURE: Email Notification to HR.
+    In production, use smtplib or SendGrid API here.
+    """
+    await asyncio.sleep(1) 
+    print("\n" + "="*50)
+    print(f"📧 EMAIL SENT TO: hr-team@company.com")
+    print(f"Subject: New Application - {candidate_name} for {role}")
+    print(f"Body: A new candidate has applied. Screening status: {status}. Please check the admin dashboard.")
+    print("="*50 + "\n")
 
 async def evaluate_candidate(data: dict):
     job = await job_openings_collection.find_one({"title": {"$regex": data['preferred_role'], "$options": "i"}})
@@ -224,6 +236,12 @@ async def process_message(session_id: str, message: str) -> str:
             session["data"]["screening_status"] = status
             
             await candidates_collection.insert_one(session["data"])
+            import asyncio
+            asyncio.create_task(send_hr_email_notification(
+                session["data"]["full_name"], 
+                session["data"]["preferred_role"], 
+                status
+            ))
             sessions[session_id] = {"intent": None, "step": None, "data": {}}
             
             return f"Thank you. Based on your profile, you are **{status}**. Your application for **{session['data']['preferred_role']}** has been successfully saved and linked to your email ({session['data']['email']}).\n\n{summary}"

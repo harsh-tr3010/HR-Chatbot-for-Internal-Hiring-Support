@@ -15,17 +15,17 @@ export default function App() {
   const endOfMessagesRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  // Initialize session on load
+  
   useEffect(() => {
     setSessionId(uuidv4());
   }, []);
 
-  // Auto-scroll to bottom
+  
   useEffect(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Handle Role Switching
+  
   const handleRoleChange = (e) => {
     const newRole = e.target.value;
     setCurrentRole(newRole);
@@ -115,7 +115,7 @@ export default function App() {
       .replace(/\n/g, '<br/>');
   };
 
-  // Dynamic Quick Replies based on selected role
+  
   const getQuickReplies = () => {
     if (currentRole === 'Candidate') {
       return ['View job openings', 'I want to apply for a job', 'Check application status', 'What is the hiring process?'];
@@ -144,7 +144,7 @@ export default function App() {
           </div>
         </div>
         
-        {/* Role Switcher Dropdown */}
+        
         <div className="flex items-center gap-2">
           <label className="text-xs font-medium text-blue-100 uppercase tracking-wide">Role:</label>
           <select 
@@ -159,7 +159,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* Chat History */}
+      
       <div className="flex-1 p-4 overflow-y-auto space-y-6 bg-[#f8fafc]">
         {messages.map((msg, idx) => (
           <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -183,8 +183,8 @@ export default function App() {
         <div ref={endOfMessagesRef} />
       </div>
 
-      {/* Dynamic Action Chips */}
-      <div className="px-4 py-3 bg-white border-t border-gray-100">
+      
+      <div className="px-4 py-3 bg-white border-t border-gray-100 flex items-center justify-between">
         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide items-center">
             {getQuickReplies().map((btn) => (
             <button 
@@ -196,9 +196,20 @@ export default function App() {
             </button>
             ))}
         </div>
+        
+        
+        {currentRole === 'HR Admin' && (
+          <a 
+            href={`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/export/candidates`}
+            download
+            className="flex-shrink-0 ml-2 whitespace-nowrap px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-full text-xs font-bold transition-colors shadow-sm"
+          >
+            📥 Export to Excel
+          </a>
+        )}
       </div>
 
-      {/* Input Form */}
+      
       <form onSubmit={sendMessage} className="p-4 bg-white border-t sm:rounded-b-xl flex items-center gap-3">
         <input 
           type="file" 
