@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+gunicorn
+motor
+pydantic
+groq
+python-dotenv
+email-validator

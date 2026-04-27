@@ -1,19 +1,34 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from models import ChatRequest, ChatResponse
 from bot_logic import process_message
 from database import seed_data, chat_history_collection
 import datetime
+import os
 
-app = FastAPI()
+app = FastAPI(title="HR Chatbot API", version="1.0.0")
+
+# PRODUCTION SECURITY: Restrict this to your actual frontend domain(s)
+# e.g., ["https://my-hr-chatbot.vercel.app", "http://localhost:5173"]
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
+
+# Global Exception Handler to prevent server crashes on bad inputs
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    print(f"Error occurred: {exc}") # In production, use proper logging
+    return JSONResponse(
+        status_code=500,
+        content={"message": "An unexpected error occurred. Please try again later."},
+    )
 
 @app.on_event("startup")
 async def startup_event():
