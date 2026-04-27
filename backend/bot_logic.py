@@ -190,7 +190,7 @@ async def process_message(session_id: str, message: str) -> str:
         elif step == "ask_notice_period":
             session["data"]["notice_period"] = message
             session["step"] = "ask_resume"
-            return "Finally, please provide a link to your resume."
+            return "Finally, please provide a link to your resume, or click the attachment (📎) icon below to upload it."
         elif step == "ask_resume":
             session["data"]["resume_link"] = message
             

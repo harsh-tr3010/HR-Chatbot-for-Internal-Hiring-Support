@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
-import { Send, User, Bot, Briefcase, Users, FileText } from 'lucide-react';
+import { Send, User, Bot, Briefcase, Users, FileText, Paperclip } from 'lucide-react';
 
 export default function App() {
   const [messages, setMessages] = useState([
@@ -10,7 +10,9 @@ export default function App() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState('');
+  
   const endOfMessagesRef = useRef(null);
+  const fileInputRef = useRef(null); 
 
   useEffect(() => {
     setSessionId(uuidv4());
@@ -43,6 +45,56 @@ export default function App() {
     }
   };
 
+  
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    
+    setIsLoading(true);
+    setMessages(prev => [...prev, { role: 'user', text: `📎 Uploading: ${file.name}...` }]);
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+      
+      
+      const uploadRes = await axios.post(`${apiUrl}/upload`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      const fileUrl = uploadRes.data.file_url;
+      
+      
+      const chatRes = await axios.post(`${apiUrl}/chat`, {
+        session_id: sessionId,
+        message: fileUrl 
+      });
+
+      
+      setMessages(prev => {
+        const newMessages = [...prev];
+        newMessages.pop(); 
+        return [
+            ...newMessages, 
+            { role: 'user', text: `📎 Attached: ${file.name}` },
+            { role: 'bot', text: chatRes.data.response }
+        ];
+      });
+    } catch (error) {
+      setMessages(prev => {
+        const newMessages = [...prev];
+        newMessages.pop(); 
+        return [...newMessages, { role: 'bot', text: 'Sorry, the file upload failed. Please try providing a link instead.' }];
+      });
+    } finally {
+      setIsLoading(false);
+      e.target.value = null; 
+    }
+  };
+
   const handleQuickReply = (text) => {
     setInput(text);
     setTimeout(() => document.getElementById('submitBtn').click(), 50);
@@ -58,7 +110,6 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen max-w-4xl mx-auto shadow-2xl bg-white border border-gray-200 sm:rounded-xl sm:my-4 font-sans">
-      {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-blue-700 to-blue-500 text-white sm:rounded-t-xl">
         <div className="flex items-center space-x-3">
           <div className="bg-white p-2 rounded-full text-blue-600">
@@ -71,7 +122,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* Chat History */}
       <div className="flex-1 p-4 overflow-y-auto space-y-6 bg-[#f8fafc]">
         {messages.map((msg, idx) => (
           <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -88,14 +138,14 @@ export default function App() {
         {isLoading && (
           <div className="flex justify-start">
             <div className="bg-gray-200 text-gray-600 px-5 py-3 rounded-2xl rounded-tl-none animate-pulse text-sm font-medium">
-              Typing response...
+              Processing...
             </div>
           </div>
         )}
         <div ref={endOfMessagesRef} />
       </div>
 
-      {/* Action Chips / Quick Replies */}
+      {/* Action Chips */}
       <div className="px-4 py-3 bg-white border-t border-gray-100 space-y-2">
         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide items-center">
             <span className="text-xs font-bold text-gray-400 uppercase tracking-wider mr-2 flex items-center gap-1"><User size={12}/> Candidate</span>
@@ -105,26 +155,30 @@ export default function App() {
             </button>
             ))}
         </div>
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide items-center">
-            <span className="text-xs font-bold text-gray-400 uppercase tracking-wider mr-2 flex items-center gap-1"><FileText size={12}/> Manager</span>
-            {['I want to raise a hiring request'].map((btn) => (
-            <button key={btn} onClick={() => handleQuickReply(btn)} className="whitespace-nowrap px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-full text-xs font-medium transition-colors">
-                {btn}
-            </button>
-            ))}
-        </div>
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide items-center">
-            <span className="text-xs font-bold text-gray-400 uppercase tracking-wider mr-2 flex items-center gap-1"><Users size={12}/> HR Admin</span>
-            {['Show pending hiring requests', 'Show shortlisted candidates', 'Show rejected candidates'].map((btn) => (
-            <button key={btn} onClick={() => handleQuickReply(btn)} className="whitespace-nowrap px-3 py-1.5 bg-green-50 hover:bg-green-100 text-green-700 border border-green-200 rounded-full text-xs font-medium transition-colors">
-                {btn}
-            </button>
-            ))}
-        </div>
       </div>
 
       {/* Input Form */}
       <form onSubmit={sendMessage} className="p-4 bg-white border-t sm:rounded-b-xl flex items-center gap-3">
+        
+        {/* Hidden File Input */}
+        <input 
+          type="file" 
+          ref={fileInputRef} 
+          className="hidden" 
+          onChange={handleFileUpload}
+          accept=".pdf,.doc,.docx"
+        />
+        
+        {/* Attachment Button */}
+        <button 
+          type="button" 
+          onClick={() => fileInputRef.current.click()} 
+          className="p-3 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-full transition-colors flex-shrink-0"
+          title="Upload Resume"
+        >
+          <Paperclip size={20} />
+        </button>
+
         <input
           type="text"
           value={input}
