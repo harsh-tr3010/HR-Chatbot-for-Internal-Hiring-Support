@@ -1,7 +1,9 @@
 function Sidebar({ setView }) {
   return (
-    <div className="w-64 bg-blue-700 text-white p-5 min-h-screen">
-      <h1 className="text-2xl font-bold mb-8">HireFlow AI</h1>
+    <div className="w-72 bg-gradient-to-b from-blue-800 to-blue-600 text-white p-6 min-h-screen shadow-xl">
+      <h1 className="text-3xl font-bold mb-10 tracking-wide">
+  HireFlow AI
+</h1>
 
       <ul className="space-y-4">
         <li
