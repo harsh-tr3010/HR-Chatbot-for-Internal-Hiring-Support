@@ -33,41 +33,34 @@ function CandidateForm() {
 };
 
   const submitForm = async () => {
-    try {
-      setLoading(true);
+  try {
+    setLoading(true);
 
-      await axios.post(
-        "http://127.0.0.1:5000/api/candidates/apply",
-        {
-          ...form,
-          skills: form.skills.split(",")
-        }
-      );
+    const data = new FormData();
 
-      alert("Application Submitted Successfully");
+    Object.keys(form).forEach((key) => {
+      data.append(key, form[key]);
+    });
 
-      setForm({
-        fullName: "",
-        email: "",
-        phone: "",
-        location: "",
-        qualification: "",
-        totalExperience: "",
-        relevantExperience: "",
-        skills: "",
-        currentCTC: "",
-        expectedCTC: "",
-        noticePeriod: "",
-        preferredRole: "",
-        resumeLink: ""
-      });
+    data.set("skills", form.skills);
 
-    } catch (error) {
-      alert("Submission Failed");
-    } finally {
-      setLoading(false);
+    if (resumeFile) {
+      data.append("resume", resumeFile);
     }
-  };
+
+    await axios.post(
+      "http://127.0.0.1:5000/api/candidates/apply",
+      data
+    );
+
+    alert("Application Submitted Successfully");
+
+  } catch (error) {
+    alert("Submission Failed");
+  } finally {
+    setLoading(false);
+  }
+};
 
   const inputStyle =
     "w-full border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500";
