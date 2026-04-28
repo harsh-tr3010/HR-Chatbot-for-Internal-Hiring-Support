@@ -1,9 +1,10 @@
 import os
 import re
 import random
-import json         
-import PyPDF2        
+import json
+import PyPDF2
 import asyncio
+import datetime
 from groq import Groq
 from database import job_openings_collection, candidates_collection, hiring_requests_collection, chat_history_collection
 from dotenv import load_dotenv
@@ -12,6 +13,15 @@ load_dotenv()
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 sessions = {}
+
+# --- GLOBALLY DEFINED BACKGROUND EMAIL FUNCTION ---
+async def send_hr_email_notification(candidate_name, role, current_status):
+    await asyncio.sleep(1)
+    print("\n" + "="*50)
+    print(f"📧 EMAIL SENT TO: hr-team@company.com")
+    print(f"Subject: New Application - {candidate_name} for {role}")
+    print(f"Body: A new candidate has applied. Screening status: {current_status}. Please check the admin dashboard.")
+    print("="*50 + "\n")
 
 def get_intent(user_message: str) -> str:
     prompt = f"""
@@ -55,7 +65,7 @@ async def evaluate_candidate(data: dict):
     if not job:
         return "Role not found in active database, but profile saved.", "Pending Review"
 
-    # 1. EXPERIENCE CHECK (Handles ranges like "0-2" or exact like "2")
+    # 1. EXPERIENCE CHECK 
     job_exp_str = str(job.get("experience_required", "0"))
     nums = re.findall(r'\d+\.?\d*', job_exp_str)
     req_exp_min = float(nums[0]) if nums else 0.0
@@ -114,7 +124,7 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             all_jobs = await jobs_cursor.to_list(length=50)
             if not all_jobs: return "There are currently no job openings."
             
-            # --- HR ADMIN VIEW ---
+            # HR ADMIN VIEW
             if user_role == "HR Admin":
                 res = "🗂️ **Active Job Requisitions (Internal DB)**\n\n"
                 for j in all_jobs:
@@ -124,8 +134,7 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                     res += "   ━━━━━━━━━━━━━━━━━━━━\n"
                 res += "\n💡 *Tip: You can ask me to generate a new job description for any of these roles.*"
                 return res
-                
-            # --- CANDIDATE VIEW ---
+            # CANDIDATE VIEW
             else:
                 display_jobs = random.sample(all_jobs, min(5, len(all_jobs)))
                 res = "Here are some of our **Top Open Roles** right now! 🌟\n\n"
@@ -180,7 +189,6 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             session["step"] = "ask_identifier"
             return "Please provide the candidate's **Email ID** or **Phone Number**."
 
-        # --- NEW INTENT TRIGGER ---
         elif intent == "hr_update_status":
             session["intent"] = "hr_update_status"
             session["step"] = "ask_identifier"
@@ -199,6 +207,7 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             )
             return comp.choices[0].message.content
 
+    # --- 2. CANDIDATE FLOW (WITH AI RESUME PARSING) ---
     if session["intent"] == "apply_job":
         step = session["step"]
         if step == "ask_role":
@@ -208,17 +217,11 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             
         elif step == "ask_autofill":
             if "uploads/" in message and message.endswith(".pdf"):
-                # --- AI RESUME PARSER ACTIVE ---
                 try:
-                    import datetime # Ensure date calculation tools are available
-                    import json
-                    import PyPDF2
-                    
                     with open(message, 'rb') as f:
                         reader = PyPDF2.PdfReader(f)
                         text = "".join([page.extract_text() for page in reader.pages if page.extract_text()])
                     
-                    # 1. Ask Llama 3 to extract strict date formats for experiences
                     sys_prompt = """You are an expert HR resume parser. Extract the following details from the text and return ONLY a valid JSON object.
                     Required keys: 
                     - 'full_name' (string)
@@ -239,7 +242,7 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                     
                     parsed_data = json.loads(comp.choices[0].message.content)
                     
-                    # --- 2. PRECISE PYTHON EXPERIENCE CALCULATION ---
+                    # PRECISE PYTHON EXPERIENCE CALCULATION
                     total_months = 0
                     current_date = datetime.datetime.now()
                     
@@ -255,7 +258,6 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                             else:
                                 end_date = datetime.datetime.strptime(end_str, "%Y-%m")
                                 
-                            # Calculate exact months difference
                             months = (end_date.year - start_date.year) * 12 + (end_date.month - start_date.month)
                             if months > 0:
                                 total_months += months
@@ -263,10 +265,8 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                             print(f"Date parsing skipped for: {exp} - Error: {e}")
                             continue
                             
-                    # Convert to years (rounded to 1 decimal place, e.g., 7 months = 0.6 yrs)
                     calculated_years = round(total_months / 12.0, 1)
                     
-                    # 3. Save to session
                     session["data"].update(parsed_data)
                     session["data"]["total_experience"] = str(calculated_years)
                     session["data"]["resume_link"] = message
@@ -282,7 +282,7 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                 session["step"] = "ask_name"
                 return "No problem! Let's do it manually. Please share your **Full Name**."
 
-        # --- MANUAL FALLBACK FLOW ---
+        # MANUAL FALLBACK FLOW
         elif step == "ask_name":
             session["data"]["full_name"] = message
             session["step"] = "ask_email"
@@ -320,7 +320,6 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             session["step"] = "ask_current_ctc"
             return "What is your current CTC? (Enter a number)"
         
-        # --- RESUME/MANUAL PATHS MERGE HERE ---
         elif step == "ask_current_ctc":
             if not is_numeric(message.replace(',','')): return "CTC must be numeric."
             session["data"]["current_ctc"] = message
@@ -334,13 +333,12 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
         elif step == "ask_notice_period":
             session["data"]["notice_period"] = message
             
-            # If they already uploaded a resume at the start, skip asking for it again!
+            # Check if resume was autofilled
             if "resume_link" in session["data"]:
                 summary, status = await evaluate_candidate(session["data"])
                 session["data"]["screening_status"] = status
                 await candidates_collection.insert_one(session["data"])
                 
-                # Background Email
                 asyncio.create_task(send_hr_email_notification(session["data"].get("full_name"), session["data"].get("preferred_role"), status))
                 sessions[session_id] = {"intent": None, "step": None, "data": {}}
                 
@@ -358,21 +356,7 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             asyncio.create_task(send_hr_email_notification(session["data"].get("full_name"), session["data"].get("preferred_role"), status))
             sessions[session_id] = {"intent": None, "step": None, "data": {}}
             
-            return f"Thank you. Based on your profile, you are **{status}**. Your application has been successfully saved.\n\n{summary}"            
-            
-            import asyncio
-            async def send_hr_email_notification(candidate_name, role, current_status):
-                await asyncio.sleep(1)
-                print("\n" + "="*50)
-                print(f"📧 EMAIL SENT TO: hr-team@company.com")
-                print(f"Subject: New Application - {candidate_name} for {role}")
-                print(f"Body: A new candidate has applied. Screening status: {current_status}. Please check the admin dashboard.")
-                print("="*50 + "\n")
-            
-            asyncio.create_task(send_hr_email_notification(session["data"]["full_name"], session["data"]["preferred_role"], status))
-            
-            sessions[session_id] = {"intent": None, "step": None, "data": {}}
-            return f"Thank you. Based on your profile, you are **{status}**. Your application for **{session['data']['preferred_role']}** has been successfully saved and linked to your email ({session['data']['email']}).\n\n{summary}"
+            return f"Thank you. Based on your profile, you are **{status}**. Your application has been successfully saved.\n\n{summary}"
 
     # --- 3. HIRING MANAGER FLOW ---
     if session["intent"] == "raise_hiring_request":
@@ -436,7 +420,7 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             sessions[session_id] = {"intent": None, "step": None, "data": {}}
             return f"Your hiring request has been created successfully.\n\n{summary}"
 
-    # --- 4. CHECK STATUS FLOW WITH CHAT HISTORY ---
+    # --- 4. CHECK STATUS FLOW ---
     if session["intent"] == "check_status":
         step = session["step"]
         if step == "ask_email":
@@ -452,7 +436,11 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             profile_query = {"email": session["data"]["email"], "phone": session["data"]["phone"]}
             applications = await candidates_collection.find(profile_query).to_list(length=10)
             
-            past_sessions = await chat_history_collection.find({"message": session["data"]["email"]}).to_list(length=50)
+            past_sessions = await chat_history_collection.find({
+                "message": session["data"]["email"],
+                "user_role": "Candidate"
+            }).to_list(length=50)
+            
             past_session_ids = list(set([s["session_id"] for s in past_sessions]))
             past_session_ids.append(session_id)
             
@@ -494,13 +482,10 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
         step = session["step"]
         if step == "ask_identifier":
             session["data"]["identifier"] = message
-            
             cand = await candidates_collection.find_one({
                 "$or": [{"email": message}, {"phone": message}]
             })
-            
             sessions[session_id] = {"intent": None, "step": None, "data": {}}
-            
             if cand:
                 return f"**Candidate Details & Summary** 📄\n\n👤 **Name:** {cand.get('full_name')}\n📧 **Email:** {cand.get('email')}\n📞 **Phone:** {cand.get('phone')}\n📍 **Location:** {cand.get('location')}\n💼 **Role Applied:** {cand.get('preferred_role')}\n🎓 **Exp:** {cand.get('total_experience')} yrs\n🛠️ **Skills:** {cand.get('skills')}\n💰 **Expected CTC:** {cand.get('expected_ctc')}\n📊 **Screening Status:** **{cand.get('screening_status')}**\n🔗 **Resume:** {cand.get('resume_link')}"
             else:
@@ -519,24 +504,20 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             return "What is the required experience level (in years)?"
         elif step == "ask_exp":
             prompt = f"Generate a highly professional, engaging, and concise Job Description for a '{session['data']['jd_role']}'. Required Skills: {session['data']['jd_skills']}. Required Experience: {message} years. Include brief sections for Responsibilities and Requirements. Do not make it overly long."
-            
             comp = groq_client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[{"role": "system", "content": "You are an expert HR copywriter."}, {"role": "user", "content": prompt}]
             )
-            
             sessions[session_id] = {"intent": None, "step": None, "data": {}}
             return f"**Here is your AI-Generated Job Description:** ✨\n\n{comp.choices[0].message.content}"
 
-    # --- 7. NEW: HR UPDATE CANDIDATE STATUS FLOW ---
+    # --- 7. HR UPDATE CANDIDATE STATUS FLOW ---
     if session["intent"] == "hr_update_status":
         step = session["step"]
         if step == "ask_identifier":
-            # Find the candidate
             cand = await candidates_collection.find_one({
                 "$or": [{"email": message}, {"phone": message}]
             })
-            
             if cand:
                 session["data"]["target_email"] = cand["email"]
                 session["step"] = "ask_new_status"
@@ -548,13 +529,10 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
         elif step == "ask_new_status":
             new_status = message
             target_email = session["data"]["target_email"]
-            
-            # Update the status in MongoDB for all applications associated with this email
             await candidates_collection.update_many(
                 {"email": target_email},
                 {"$set": {"screening_status": new_status}}
             )
-            
             sessions[session_id] = {"intent": None, "step": None, "data": {}}
             return f"🔄 Success! The status for **{target_email}** has been updated to **{new_status}**."
 
