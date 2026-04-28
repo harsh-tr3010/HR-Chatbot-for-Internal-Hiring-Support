@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
-import { Send, User, Bot, Briefcase, Paperclip } from 'lucide-react';
+import { Send, User, Bot, Briefcase, Paperclip, X } from 'lucide-react';
 
 export default function App() {
   const [currentRole, setCurrentRole] = useState('Candidate');
@@ -12,27 +12,67 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState('');
   
+  // --- NEW: Modal States ---
+  const [showAuthModal, setShowAuthModal] = useState(true); // Shows by default for candidates
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPhone, setAuthPhone] = useState('');
+  const [isVerifying, setIsVerifying] = useState(false);
+
   const endOfMessagesRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  
   useEffect(() => {
     setSessionId(uuidv4());
   }, []);
 
-  
   useEffect(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  
+  // Handle Role Switching
   const handleRoleChange = (e) => {
     const newRole = e.target.value;
     setCurrentRole(newRole);
-    setSessionId(uuidv4()); // Reset backend session state machine!
+    setSessionId(uuidv4()); 
     setMessages([
       { role: 'bot', text: `Switched to **${newRole}** mode. How can I assist you today?` }
     ]);
+    
+    // Show verification pop-up if switching to Candidate
+    if (newRole === 'Candidate') {
+      setShowAuthModal(true);
+    } else {
+      setShowAuthModal(false);
+    }
+  };
+
+  // --- NEW: Handle Candidate Login Verification ---
+  const handleCandidateLogin = async (e) => {
+    e.preventDefault();
+    setIsVerifying(true);
+    
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+      const res = await axios.post(`${apiUrl}/candidate/login`, {
+        email: authEmail,
+        phone: authPhone
+      });
+
+      if (res.data.history && res.data.history.length > 0) {
+        // Restore their exact previous chat bubbles!
+        setMessages(res.data.history);
+        if (res.data.session_id) {
+          setSessionId(res.data.session_id); // Re-link to old session
+        }
+      } else {
+        setMessages([{ role: 'bot', text: `Welcome! I don't see any previous chats for that email, but you are ready to start applying.` }]);
+      }
+      setShowAuthModal(false);
+    } catch (error) {
+      console.error("Verification failed", error);
+    } finally {
+      setIsVerifying(false);
+    }
   };
 
   const sendMessage = async (e) => {
@@ -73,28 +113,22 @@ export default function App() {
       const uploadRes = await axios.post(`${apiUrl}/upload`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
-
-      const fileUrl = uploadRes.data.file_url;
       
       const chatRes = await axios.post(`${apiUrl}/chat`, {
         session_id: sessionId,
-        message: fileUrl 
+        message: uploadRes.data.file_url 
       });
 
       setMessages(prev => {
         const newMessages = [...prev];
         newMessages.pop(); 
-        return [
-            ...newMessages, 
-            { role: 'user', text: `📎 Attached: ${file.name}` },
-            { role: 'bot', text: chatRes.data.response }
-        ];
+        return [...newMessages, { role: 'user', text: `📎 Attached: ${file.name}` }, { role: 'bot', text: chatRes.data.response }];
       });
     } catch (error) {
       setMessages(prev => {
         const newMessages = [...prev];
         newMessages.pop(); 
-        return [...newMessages, { role: 'bot', text: 'Sorry, the file upload failed. Please try providing a link instead.' }];
+        return [...newMessages, { role: 'bot', text: 'Sorry, the file upload failed.' }];
       });
     } finally {
       setIsLoading(false);
@@ -115,43 +149,58 @@ export default function App() {
       .replace(/\n/g, '<br/>');
   };
 
-  
   const getQuickReplies = () => {
-    if (currentRole === 'Candidate') {
-      return ['View job openings', 'I want to apply for a job', 'Check application status', 'What is the hiring process?'];
-    }
-    if (currentRole === 'Hiring Manager') {
-      return ['I want to raise a hiring request'];
-    }
-    if (currentRole === 'HR Admin') {
-      return ['Show pending hiring requests', 'Show shortlisted candidates', 'Show rejected candidates'];
-    }
+    if (currentRole === 'Candidate') return ['View job openings', 'I want to apply for a job', 'Check application status', 'What is the hiring process?'];
+    if (currentRole === 'Hiring Manager') return ['I want to raise a hiring request'];
+    if (currentRole === 'HR Admin') return ['Show pending hiring requests', 'Show shortlisted candidates', 'Find candidate details', 'Generate job description'];
     return [];
   };
 
   return (
-    <div className="flex flex-col h-screen max-w-4xl mx-auto shadow-2xl bg-white border border-gray-200 sm:rounded-xl sm:my-4 font-sans">
+    <div className="relative flex flex-col h-screen max-w-4xl mx-auto shadow-2xl bg-white border border-gray-200 sm:rounded-xl sm:my-4 font-sans overflow-hidden">
       
-      {/* Header with Role Switcher */}
-      <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-blue-700 to-blue-500 text-white sm:rounded-t-xl">
-        <div className="flex items-center space-x-3">
-          <div className="bg-white p-2 rounded-full text-blue-600">
-            <Briefcase size={24} />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold">HR Hiring Assistant</h1>
-            <p className="text-xs text-blue-100">Internal Support Bot</p>
+      {/* VERIFICATION MODAL OVERLAY */}
+      {showAuthModal && (
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-2xl shadow-2xl max-w-sm w-full mx-4 border border-gray-100">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-gray-800">Candidate Verification</h2>
+              <button onClick={() => setShowAuthModal(false)} className="text-gray-400 hover:text-gray-600"><X size={20}/></button>
+            </div>
+            <p className="text-sm text-gray-500 mb-6">Enter your details to restore your previous chat history, or start fresh.</p>
+            
+            <form onSubmit={handleCandidateLogin} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Email Address</label>
+                <input type="email" required value={authEmail} onChange={e=>setAuthEmail(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="john@example.com" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Phone Number</label>
+                <input type="text" required value={authPhone} onChange={e=>setAuthPhone(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="9876543210" />
+              </div>
+              
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setShowAuthModal(false)} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2.5 rounded-xl text-sm font-semibold transition-colors">
+                  Start Fresh
+                </button>
+                <button type="submit" disabled={isVerifying} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-md disabled:opacity-70">
+                  {isVerifying ? 'Checking...' : 'Restore Chat'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
-        
-        
+      )}
+
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-blue-700 to-blue-500 text-white sm:rounded-t-xl">
+        <div className="flex items-center space-x-3">
+          <div className="bg-white p-2 rounded-full text-blue-600"><Briefcase size={24} /></div>
+          <div><h1 className="text-xl font-bold">HR Hiring Assistant</h1><p className="text-xs text-blue-100">Internal Support Bot</p></div>
+        </div>
         <div className="flex items-center gap-2">
           <label className="text-xs font-medium text-blue-100 uppercase tracking-wide">Role:</label>
-          <select 
-            value={currentRole} 
-            onChange={handleRoleChange}
-            className="bg-blue-800 border border-blue-600 text-white text-sm rounded-lg focus:ring-blue-300 focus:border-blue-300 block p-2 cursor-pointer outline-none"
-          >
+          <select value={currentRole} onChange={handleRoleChange} className="bg-blue-800 border border-blue-600 text-white text-sm rounded-lg focus:ring-blue-300 block p-2 cursor-pointer outline-none">
             <option value="Candidate">Candidate</option>
             <option value="Hiring Manager">Hiring Manager</option>
             <option value="HR Admin">HR Admin</option>
@@ -159,7 +208,7 @@ export default function App() {
         </div>
       </div>
 
-      
+      {/* Chat History */}
       <div className="flex-1 p-4 overflow-y-auto space-y-6 bg-[#f8fafc]">
         {messages.map((msg, idx) => (
           <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -175,66 +224,34 @@ export default function App() {
         ))}
         {isLoading && (
           <div className="flex justify-start">
-            <div className="bg-gray-200 text-gray-600 px-5 py-3 rounded-2xl rounded-tl-none animate-pulse text-sm font-medium">
-              Processing...
-            </div>
+            <div className="bg-gray-200 text-gray-600 px-5 py-3 rounded-2xl rounded-tl-none animate-pulse text-sm font-medium">Processing...</div>
           </div>
         )}
         <div ref={endOfMessagesRef} />
       </div>
 
-      
       <div className="px-4 py-3 bg-white border-t border-gray-100 flex items-center justify-between">
         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide items-center">
             {getQuickReplies().map((btn) => (
-            <button 
-              key={btn} 
-              onClick={() => handleQuickReply(btn)} 
-              className="whitespace-nowrap px-4 py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 rounded-full text-xs font-semibold transition-colors"
-            >
+            <button key={btn} onClick={() => handleQuickReply(btn)} className="whitespace-nowrap px-4 py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 rounded-full text-xs font-semibold transition-colors">
                 {btn}
             </button>
             ))}
         </div>
-        
-        
         {currentRole === 'HR Admin' && (
-          <a 
-            href={`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/export/candidates`}
-            download
-            className="flex-shrink-0 ml-2 whitespace-nowrap px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-full text-xs font-bold transition-colors shadow-sm"
-          >
+          <a href={`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/export/candidates`} download className="flex-shrink-0 ml-2 whitespace-nowrap px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-full text-xs font-bold transition-colors shadow-sm">
             📥 Export to Excel
           </a>
         )}
       </div>
 
-      
       <form onSubmit={sendMessage} className="p-4 bg-white border-t sm:rounded-b-xl flex items-center gap-3">
-        <input 
-          type="file" 
-          ref={fileInputRef} 
-          className="hidden" 
-          onChange={handleFileUpload}
-          accept=".pdf,.doc,.docx"
-        />
-        <button 
-          type="button" 
-          onClick={() => fileInputRef.current.click()} 
-          className="p-3 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-full transition-colors flex-shrink-0"
-          title="Upload Resume"
-        >
+        <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept=".pdf,.doc,.docx" />
+        <button type="button" onClick={() => fileInputRef.current.click()} className="p-3 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-full transition-colors flex-shrink-0">
           <Paperclip size={20} />
         </button>
-
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder={`Type as ${currentRole}...`}
-          className="flex-1 bg-gray-50 border border-gray-300 text-gray-800 rounded-full px-5 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-inner"
-        />
-        <button id="submitBtn" type="submit" disabled={isLoading} className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full flex-shrink-0 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed">
+        <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder={`Type as ${currentRole}...`} className="flex-1 bg-gray-50 border border-gray-300 text-gray-800 rounded-full px-5 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-inner" />
+        <button id="submitBtn" type="submit" disabled={isLoading} className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full flex-shrink-0 transition-all shadow-md hover:shadow-lg disabled:opacity-50">
           <Send size={22} className="ml-1 mt-1 -mr-1 -mb-1" />
         </button>
       </form>
