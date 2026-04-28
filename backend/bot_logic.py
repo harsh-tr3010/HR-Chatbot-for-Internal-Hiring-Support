@@ -172,9 +172,18 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                 return "✅ **Shortlisted Candidates:**\n" + "\n".join([f"• {c.get('full_name', 'Unknown')} - {c.get('preferred_role', 'Unknown')} ({c.get('email', '')})" for c in cands])
             
             elif "rejected" in msg_lower or "not suitable" in msg_lower:
-                cands = await candidates_collection.find({"screening_status": {"$regex": "Not suitable|Missing"}}).to_list(10)
+                # FIX: Added "Reject" to the regex and made it case-insensitive!
+                cands = await candidates_collection.find({
+                    "screening_status": {"$regex": "Not suitable|Missing|Reject", "$options": "i"}
+                }).to_list(10)
+                
                 if not cands: return "No rejected candidates found."
-                return "❌ **Rejected Candidates:**\n" + "\n".join([f"• {c.get('full_name', 'Unknown')} - {c.get('preferred_role', 'Unknown')} ({c.get('email', '')})" for c in cands])
+                
+                
+                return "❌ **Rejected Candidates:**\n" + "\n".join([
+                    f"• {c.get('full_name', 'Unknown')} - {c.get('preferred_role', 'Unknown')} ({c.get('email', '')}) | Status: *{c.get('screening_status', 'Unknown')}*" 
+                    for c in cands
+                ])
             
             elif "awaiting" in msg_lower or "interview" in msg_lower:
                 cands = await candidates_collection.find({"screening_status": {"$regex": "interview|Awaiting", "$options": "i"}}).to_list(10)
