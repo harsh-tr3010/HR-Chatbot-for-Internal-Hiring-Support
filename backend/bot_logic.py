@@ -1,6 +1,9 @@
 import os
 import re
 import random
+import json         
+import PyPDF2        
+import asyncio
 from groq import Groq
 from database import job_openings_collection, candidates_collection, hiring_requests_collection, chat_history_collection
 from dotenv import load_dotenv
@@ -52,29 +55,46 @@ async def evaluate_candidate(data: dict):
     if not job:
         return "Role not found in active database, but profile saved.", "Pending Review"
 
-    req_exp = float(job["experience_required"])
-    cand_exp = float(data["total_experience"])
-    req_skills = [s.lower() for s in job["skills_required"]]
-    cand_skills = [s.strip().lower() for s in data["skills"].split(",")]
+    # 1. EXPERIENCE CHECK (Handles ranges like "0-2" or exact like "2")
+    job_exp_str = str(job.get("experience_required", "0"))
+    nums = re.findall(r'\d+\.?\d*', job_exp_str)
+    req_exp_min = float(nums[0]) if nums else 0.0
+    req_exp_max = float(nums[1]) if len(nums) > 1 else 99.0
     
+    cand_exp_str = str(data.get("total_experience", "0"))
+    cand_nums = re.findall(r'\d+\.?\d*', cand_exp_str)
+    cand_exp = float(cand_nums[0]) if cand_nums else 0.0
+
+    exp_match = (req_exp_min <= cand_exp <= req_exp_max) or (len(nums) == 1 and cand_exp >= req_exp_min)
+
+    # 2. SKILL CHECK (Requires at least 2 matching skills)
+    req_skills = [s.lower() for s in job.get("skills_required", [])]
+    cand_skills = [s.strip().lower() for s in data.get("skills", "").split(",")]
     matched_skills = [s for s in cand_skills if any(req in s or s in req for req in req_skills)]
-    skill_match_percent = len(matched_skills) / len(req_skills) if req_skills else 1.0
-    
-    if cand_exp >= req_exp and skill_match_percent >= 0.6:
-        status = "Shortlisted for next step" 
-    elif cand_exp < req_exp:
+    skill_match = len(matched_skills) >= 2
+
+    # 3. LOCATION CHECK
+    job_loc = job.get("location", "").lower()
+    cand_loc = data.get("location", "").lower()
+    loc_match = (job_loc in cand_loc) or (cand_loc in job_loc) or ('remote' in job_loc) or ('any' in job_loc)
+
+    # --- FINAL DECISION MATRIX ---
+    if exp_match and skill_match and loc_match:
+        status = "Shortlisted for next step"
+    elif not exp_match:
         status = "Not suitable based on required experience"
+    elif not skill_match:
+        status = "Missing required skills (minimum 2 needed)"
     else:
-        status = "Missing required skills"
+        status = "Not suitable based on location"
 
     summary = f"""
     **Candidate Summary**
-    • Name: {data['full_name']}
-    • Role Applied: {data['preferred_role']}
-    • Experience: {data['total_experience']} years
-    • Skills: {data['skills']}
-    • Expected CTC: {data['expected_ctc']}
-    • Notice Period: {data['notice_period']}
+    • Name: {data.get('full_name', 'N/A')}
+    • Role Applied: {data.get('preferred_role', 'N/A')}
+    • Experience: {cand_exp} years
+    • Skills Matched: {len(matched_skills)}
+    • Location Match: {'Yes' if loc_match else 'No'}
     • Screening Status: **{status}**
     """
     return summary, status
@@ -244,7 +264,7 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             
             await candidates_collection.insert_one(session["data"])
             
-            # Trigger background Email Notification to HR
+            
             import asyncio
             async def send_hr_email_notification(candidate_name, role, current_status):
                 await asyncio.sleep(1)
