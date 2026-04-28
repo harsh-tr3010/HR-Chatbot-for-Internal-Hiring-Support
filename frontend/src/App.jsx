@@ -12,8 +12,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState('');
   
-  // --- NEW: Modal States ---
-  const [showAuthModal, setShowAuthModal] = useState(true); // Shows by default for candidates
+  const [showAuthModal, setShowAuthModal] = useState(true);
   const [authEmail, setAuthEmail] = useState('');
   const [authPhone, setAuthPhone] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
@@ -29,24 +28,21 @@ export default function App() {
     endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Handle Role Switching
-  const handleRoleChange = (e) => {
-    const newRole = e.target.value;
+  // --- NEW: Centralized Role Switching Function ---
+  const switchRole = (newRole) => {
     setCurrentRole(newRole);
     setSessionId(uuidv4()); 
     setMessages([
       { role: 'bot', text: `Switched to **${newRole}** mode. How can I assist you today?` }
     ]);
-    
-    // Show verification pop-up if switching to Candidate
-    if (newRole === 'Candidate') {
-      setShowAuthModal(true);
-    } else {
-      setShowAuthModal(false);
-    }
+    // Only show modal for Candidates
+    setShowAuthModal(newRole === 'Candidate');
   };
 
-  // --- NEW: Handle Candidate Login Verification ---
+  const handleRoleChange = (e) => {
+    switchRole(e.target.value);
+  };
+
   const handleCandidateLogin = async (e) => {
     e.preventDefault();
     setIsVerifying(true);
@@ -59,10 +55,9 @@ export default function App() {
       });
 
       if (res.data.history && res.data.history.length > 0) {
-        // Restore their exact previous chat bubbles!
         setMessages(res.data.history);
         if (res.data.session_id) {
-          setSessionId(res.data.session_id); // Re-link to old session
+          setSessionId(res.data.session_id);
         }
       } else {
         setMessages([{ role: 'bot', text: `Welcome! I don't see any previous chats for that email, but you are ready to start applying.` }]);
@@ -164,7 +159,7 @@ export default function App() {
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-2xl shadow-2xl max-w-sm w-full mx-4 border border-gray-100">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold text-gray-800">Candidate Verification</h2>
+              <h2 className="text-xl font-bold text-gray-800">Candidate Login</h2>
               <button onClick={() => setShowAuthModal(false)} className="text-gray-400 hover:text-gray-600"><X size={20}/></button>
             </div>
             <p className="text-sm text-gray-500 mb-6">Enter your details to restore your previous chat history, or start fresh.</p>
@@ -188,6 +183,29 @@ export default function App() {
                 </button>
               </div>
             </form>
+
+            {/* NEW: Role Switcher Options Inside Modal */}
+            <div className="mt-6 pt-4 border-t border-gray-100 text-center">
+              <p className="text-xs text-gray-400 mb-3 uppercase tracking-wider font-semibold">Internal Employee Login</p>
+              <div className="flex justify-center gap-4">
+                <button 
+                  type="button" 
+                  onClick={() => switchRole('Hiring Manager')} 
+                  className="text-xs font-semibold text-purple-600 hover:text-purple-800 transition-colors"
+                >
+                  Hiring Manager
+                </button>
+                <span className="text-gray-300">|</span>
+                <button 
+                  type="button" 
+                  onClick={() => switchRole('HR Admin')} 
+                  className="text-xs font-semibold text-green-600 hover:text-green-800 transition-colors"
+                >
+                  HR Admin
+                </button>
+              </div>
+            </div>
+
           </div>
         </div>
       )}
