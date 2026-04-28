@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
-import { Send, User, Bot, Briefcase, Paperclip, X } from 'lucide-react';
+import { Send, User, Bot, Briefcase, Paperclip, X, Moon, Sun, MonitorDot } from 'lucide-react';
 
 export default function App() {
+  // --- UI STATES ---
   const [currentRole, setCurrentRole] = useState('Candidate');
+  const [darkMode, setDarkMode] = useState(false);
   const [messages, setMessages] = useState([
     { role: 'bot', text: 'Hello! I am your HR Hiring Assistant. You are currently in **Candidate** mode. How can I help you today?' }
   ]);
@@ -12,6 +14,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState('');
   
+  // --- MODAL STATES ---
   const [showAuthModal, setShowAuthModal] = useState(true);
   const [authEmail, setAuthEmail] = useState('');
   const [authPhone, setAuthPhone] = useState('');
@@ -20,115 +23,75 @@ export default function App() {
   const endOfMessagesRef = useRef(null);
   const fileInputRef = useRef(null);
 
+  // Initialize session and dark mode preference on load
   useEffect(() => {
     setSessionId(uuidv4());
+    const isDark = localStorage.getItem('theme') === 'dark';
+    setDarkMode(isDark);
+    if (isDark) document.documentElement.classList.add('dark');
   }, []);
 
+  // Auto-scroll chat
   useEffect(() => {
-    endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
+    endOfMessagesRef.current?.scrollUntilVisible({ behavior: 'smooth' });
   }, [messages]);
 
-  // --- NEW: Centralized Role Switching Function ---
+  // Handle Dark Mode Toggle
+  const toggleDarkMode = () => {
+    setDarkMode(!darkMode);
+    if (!darkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  };
+
+  // Switch Role Logic
   const switchRole = (newRole) => {
     setCurrentRole(newRole);
     setSessionId(uuidv4()); 
     setMessages([
       { role: 'bot', text: `Switched to **${newRole}** mode. How can I assist you today?` }
     ]);
-    // Only show modal for Candidates
     setShowAuthModal(newRole === 'Candidate');
   };
 
-  const handleRoleChange = (e) => {
-    switchRole(e.target.value);
-  };
+  const handleRoleChange = (e) => switchRole(e.target.value);
 
+  // API Call: Candidate verification
   const handleCandidateLogin = async (e) => {
     e.preventDefault();
     setIsVerifying(true);
-    
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
       const res = await axios.post(`${apiUrl}/candidate/login`, {
         email: authEmail,
         phone: authPhone
       });
-
       if (res.data.history && res.data.history.length > 0) {
         setMessages(res.data.history);
-        if (res.data.session_id) {
-          setSessionId(res.data.session_id);
-        }
+        if (res.data.session_id) setSessionId(res.data.session_id);
       } else {
-        setMessages([{ role: 'bot', text: `Welcome! I don't see any previous chats for that email, but you are ready to start applying.` }]);
+        setMessages([{ role: 'bot', text: `Welcome! I don't see any previous chats for that email, but you are ready to start fresh.` }]);
       }
       setShowAuthModal(false);
-    } catch (error) {
-      console.error("Verification failed", error);
-    } finally {
-      setIsVerifying(false);
-    }
+    } catch (error) { console.error("Verification failed", error); } finally { setIsVerifying(false); }
   };
 
   const sendMessage = async (e) => {
     e?.preventDefault();
     if (!input.trim()) return;
-
     const userMessage = input.trim();
     setMessages(prev => [...prev, { role: 'user', text: userMessage }]);
     setInput('');
     setIsLoading(true);
-
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
-      const res = await axios.post(`${apiUrl}/chat`, {
-        session_id: sessionId,
-        message: userMessage
-      });
+      const res = await axios.post(`${apiUrl}/chat`, { session_id: sessionId, message: userMessage });
       setMessages(prev => [...prev, { role: 'bot', text: res.data.response }]);
-    } catch (error) {
-      setMessages(prev => [...prev, { role: 'bot', text: 'Server error. Please ensure the backend is running.' }]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleFileUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    setIsLoading(true);
-    setMessages(prev => [...prev, { role: 'user', text: `📎 Uploading: ${file.name}...` }]);
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
-      const uploadRes = await axios.post(`${apiUrl}/upload`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      
-      const chatRes = await axios.post(`${apiUrl}/chat`, {
-        session_id: sessionId,
-        message: uploadRes.data.file_url 
-      });
-
-      setMessages(prev => {
-        const newMessages = [...prev];
-        newMessages.pop(); 
-        return [...newMessages, { role: 'user', text: `📎 Attached: ${file.name}` }, { role: 'bot', text: chatRes.data.response }];
-      });
-    } catch (error) {
-      setMessages(prev => {
-        const newMessages = [...prev];
-        newMessages.pop(); 
-        return [...newMessages, { role: 'bot', text: 'Sorry, the file upload failed.' }];
-      });
-    } finally {
-      setIsLoading(false);
-      e.target.value = null; 
-    }
+    } catch (error) { setMessages(prev => [...prev, { role: 'bot', text: 'Server error.' }]); } finally { setIsLoading(false); }
   };
 
   const handleQuickReply = (text) => {
@@ -139,137 +102,130 @@ export default function App() {
   const formatText = (text) => {
     if (!text) return '';
     return text
-      .replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-gray-900">$1</strong>')
-      .replace(/\*(.*?)\*/g, '<em class="text-gray-600 italic">$1</em>')
+      .replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-gray-900 dark:text-gray-100">$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em class="text-gray-600 dark:text-gray-400 italic">$1</em>')
       .replace(/\n/g, '<br/>');
   };
 
   const getQuickReplies = () => {
-    if (currentRole === 'Candidate') return ['View job openings', 'I want to apply for a job', 'Check application status', 'What is the hiring process?'];
+    if (currentRole === 'Candidate') return ['View job openings', 'Apply for a job', 'Check application status'];
     if (currentRole === 'Hiring Manager') return ['I want to raise a hiring request'];
-    if (currentRole === 'HR Admin') return ['Show pending hiring requests', 'Show shortlisted candidates', 'Find candidate details', 'Generate job description'];
+    if (currentRole === 'HR Admin') return ['Pending hiring requests', 'Shortlisted candidates', 'Generate job description'];
     return [];
   };
 
   return (
-    <div className="relative flex flex-col h-screen max-w-4xl mx-auto shadow-2xl bg-white border border-gray-200 sm:rounded-xl sm:my-4 font-sans overflow-hidden">
+    <div className={`relative flex flex-col h-screen max-w-4xl mx-auto ${darkMode ? 'dark' : ''} font-sans overflow-hidden sm:rounded-xl sm:my-4 shadow-3xl border border-gray-100 dark:border-gray-800 bg-[#f8fafc] dark:bg-[#0f172a]`}>
       
-      {/* VERIFICATION MODAL OVERLAY */}
+      {/* 1. AUTH MODAL WITH INTERNAL NAVIGATION */}
       {showAuthModal && (
-        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-2xl shadow-2xl max-w-sm w-full mx-4 border border-gray-100">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold text-gray-800">Candidate Login</h2>
-              <button onClick={() => setShowAuthModal(false)} className="text-gray-400 hover:text-gray-600"><X size={20}/></button>
+        <div className="absolute inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4 transition-opacity duration-300">
+          <div className="bg-white dark:bg-gray-900 p-8 rounded-3xl shadow-2xl max-w-sm w-full border border-gray-100 dark:border-gray-800 scale-100 animate-fade-in-up">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-extrabold text-gray-900 dark:text-white tracking-tight">Candidate Login</h2>
+              <button onClick={() => setShowAuthModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"><X size={22}/></button>
             </div>
-            <p className="text-sm text-gray-500 mb-6">Enter your details to restore your previous chat history, or start fresh.</p>
+            <p className="text-gray-500 dark:text-gray-400 mb-8 leading-relaxed">Restore previous chat history, or click Start Fresh to begin.</p>
             
-            <form onSubmit={handleCandidateLogin} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Email Address</label>
-                <input type="email" required value={authEmail} onChange={e=>setAuthEmail(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="john@example.com" />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Phone Number</label>
-                <input type="text" required value={authPhone} onChange={e=>setAuthPhone(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="9876543210" />
-              </div>
-              
-              <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setShowAuthModal(false)} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2.5 rounded-xl text-sm font-semibold transition-colors">
-                  Start Fresh
-                </button>
-                <button type="submit" disabled={isVerifying} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-md disabled:opacity-70">
-                  {isVerifying ? 'Checking...' : 'Restore Chat'}
+            <form onSubmit={handleCandidateLogin} className="space-y-5 mb-8">
+              <input type="email" required value={authEmail} onChange={e=>setAuthEmail(e.target.value)} className="w-full border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none transition" placeholder="Email (john@example.com)" />
+              <input type="text" required value={authPhone} onChange={e=>setAuthPhone(e.target.value)} className="w-full border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none transition" placeholder="Phone Number (9876543210)" />
+              <div className="flex gap-4 pt-3">
+                <button type="button" onClick={() => setShowAuthModal(false)} className="flex-1 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 py-3 rounded-xl font-semibold transition">Start Fresh</button>
+                <button type="submit" disabled={isVerifying} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-semibold transition disabled:opacity-70">
+                  {isVerifying ? 'Checking...' : 'Restore'}
                 </button>
               </div>
             </form>
 
-            {/* NEW: Role Switcher Options Inside Modal */}
-            <div className="mt-6 pt-4 border-t border-gray-100 text-center">
-              <p className="text-xs text-gray-400 mb-3 uppercase tracking-wider font-semibold">Internal Employee Login</p>
-              <div className="flex justify-center gap-4">
-                <button 
-                  type="button" 
-                  onClick={() => switchRole('Hiring Manager')} 
-                  className="text-xs font-semibold text-purple-600 hover:text-purple-800 transition-colors"
-                >
-                  Hiring Manager
-                </button>
-                <span className="text-gray-300">|</span>
-                <button 
-                  type="button" 
-                  onClick={() => switchRole('HR Admin')} 
-                  className="text-xs font-semibold text-green-600 hover:text-green-800 transition-colors"
-                >
-                  HR Admin
-                </button>
+            <div className="pt-6 border-t border-gray-100 dark:border-gray-800 text-center">
+              <p className="text-xs text-gray-400 mb-4 uppercase font-bold tracking-widest">Internal Employee Access</p>
+              <div className="flex justify-center gap-3">
+                <button onClick={() => switchRole('Hiring Manager')} className="text-xs font-semibold px-4 py-1.5 bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300 rounded-full hover:bg-purple-100 dark:hover:bg-purple-900 transition">Hiring Manager</button>
+                <button onClick={() => switchRole('HR Admin')} className="text-xs font-semibold px-4 py-1.5 bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300 rounded-full hover:bg-green-100 dark:hover:bg-green-900 transition">HR Admin</button>
               </div>
             </div>
-
           </div>
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-blue-700 to-blue-500 text-white sm:rounded-t-xl">
-        <div className="flex items-center space-x-3">
-          <div className="bg-white p-2 rounded-full text-blue-600"><Briefcase size={24} /></div>
-          <div><h1 className="text-xl font-bold">HR Hiring Assistant</h1><p className="text-xs text-blue-100">Internal Support Bot</p></div>
+      {/* 2. MODERN HEADER WITH GLOWY DROPDOWN & DARK MODE TOGGLE */}
+      <div className="flex items-center justify-between px-6 py-5 bg-white dark:bg-gray-950 border-b border-gray-100 dark:border-gray-800 sm:rounded-t-xl sticky top-0 z-40">
+        <div className="flex items-center space-x-4">
+          <div className="p-3 bg-blue-50 dark:bg-blue-950 rounded-2xl text-blue-600 dark:text-blue-400 shadow-inner"><Briefcase size={26} /></div>
+          <div>
+            <h1 className="text-xl font-extrabold text-gray-950 dark:text-white tracking-tighter">HR-Chatbot-for-Internal-Hiring-Support</h1>
+            <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Digital HR Assistant</p>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <label className="text-xs font-medium text-blue-100 uppercase tracking-wide">Role:</label>
-          <select value={currentRole} onChange={handleRoleChange} className="bg-blue-800 border border-blue-600 text-white text-sm rounded-lg focus:ring-blue-300 block p-2 cursor-pointer outline-none">
-            <option value="Candidate">Candidate</option>
-            <option value="Hiring Manager">Hiring Manager</option>
-            <option value="HR Admin">HR Admin</option>
-          </select>
+        
+        <div className="flex items-center gap-4">
+          {/* DARK MODE TOGGLE */}
+          <button onClick={toggleDarkMode} className="p-2.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-700 transition-all">
+            {darkMode ? <Sun size={20}/> : <Moon size={20}/>}
+          </button>
+          
+          {/* 3. ROLE SWITCHER WITH GLOWY BORDER */}
+          <div className="relative">
+            <select 
+              value={currentRole} 
+              onChange={handleRoleChange} 
+              className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-semibold rounded-xl block p-3 pr-10 cursor-pointer outline-none border-2 border-transparent focus:border-blue-400 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-950 transition-all duration-300 shadow-lg shadow-blue-500/10 dark:shadow-blue-900/30 appearance-none"
+            >
+              <option value="Candidate">👤 Candidate</option>
+              <option value="Hiring Manager">🟣 Hiring Manager</option>
+              <option value="HR Admin">🟢 HR Admin</option>
+            </select>
+            <MonitorDot size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          </div>
         </div>
       </div>
 
-      {/* Chat History */}
-      <div className="flex-1 p-4 overflow-y-auto space-y-6 bg-[#f8fafc]">
+      {/* CHAT MESSAGES */}
+      <div className="flex-1 p-6 overflow-y-auto space-y-8 bg-[#f8fafc] dark:bg-[#111c30]">
         {messages.map((msg, idx) => (
-          <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`flex max-w-[85%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-              <div className={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center shadow-md ${msg.role === 'user' ? 'bg-blue-600 ml-3' : 'bg-green-500 mr-3'}`}>
-                {msg.role === 'user' ? <User size={20} className="text-white" /> : <Bot size={20} className="text-white" />}
+          <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}>
+            <div className={`flex max-w-[85%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} items-end`}>
+              <div className={`flex-shrink-0 h-9 w-9 rounded-full flex items-center justify-center shadow ${msg.role === 'user' ? 'bg-blue-600 dark:bg-blue-500 ml-3' : 'bg-green-500 dark:bg-green-500 mr-3'}`}>
+                {msg.role === 'user' ? <User size={18} className="text-white" /> : <Bot size={18} className="text-white" />}
               </div>
-              <div className={`p-4 rounded-2xl shadow-sm text-sm leading-relaxed ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-white text-gray-800 border border-gray-200 rounded-tl-none'}`}>
+              <div className={`p-4 rounded-3xl leading-relaxed text-sm shadow-sm ${msg.role === 'user' ? 'bg-blue-600 dark:bg-blue-500 text-white rounded-br-none' : 'bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-100 border border-gray-100 dark:border-gray-800 rounded-bl-none'}`}>
                 <div dangerouslySetInnerHTML={{ __html: formatText(msg.text) }} />
               </div>
             </div>
           </div>
         ))}
         {isLoading && (
-          <div className="flex justify-start">
-            <div className="bg-gray-200 text-gray-600 px-5 py-3 rounded-2xl rounded-tl-none animate-pulse text-sm font-medium">Processing...</div>
+          <div className="flex justify-start animate-pulse">
+            <div className="bg-white dark:bg-gray-900 text-gray-500 dark:text-gray-400 px-6 py-4 rounded-full rounded-bl-none text-sm font-medium border dark:border-gray-800">Processing...</div>
           </div>
         )}
         <div ref={endOfMessagesRef} />
       </div>
 
-      <div className="px-4 py-3 bg-white border-t border-gray-100 flex items-center justify-between">
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide items-center">
+      {/* QUICK REPLY CHIPS & EXPORT */}
+      <div className="px-5 py-4 bg-white dark:bg-gray-950 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between gap-4">
+        <div className="flex gap-2.5 overflow-x-auto pb-1.5 scrollbar-hide items-center flex-1">
             {getQuickReplies().map((btn) => (
-            <button key={btn} onClick={() => handleQuickReply(btn)} className="whitespace-nowrap px-4 py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 rounded-full text-xs font-semibold transition-colors">
+            <button key={btn} onClick={() => handleQuickReply(btn)} className="whitespace-nowrap px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-full text-xs font-semibold border dark:border-gray-700 transition">
                 {btn}
             </button>
             ))}
         </div>
         {currentRole === 'HR Admin' && (
-          <a href={`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/export/candidates`} download className="flex-shrink-0 ml-2 whitespace-nowrap px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-full text-xs font-bold transition-colors shadow-sm">
-            📥 Export to Excel
+          <a href={`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/export/candidates`} download className="flex-shrink-0 whitespace-nowrap px-5 py-2.5 bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600 text-white rounded-xl text-xs font-bold transition shadow-md">
+            📥 Export Excel
           </a>
         )}
       </div>
 
-      <form onSubmit={sendMessage} className="p-4 bg-white border-t sm:rounded-b-xl flex items-center gap-3">
-        <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept=".pdf,.doc,.docx" />
-        <button type="button" onClick={() => fileInputRef.current.click()} className="p-3 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-full transition-colors flex-shrink-0">
+      {/* INPUT FORM */}
+      <form onSubmit={sendMessage} className="p-5 bg-white dark:bg-gray-950 border-t dark:border-gray-800 sm:rounded-b-xl flex items-center gap-4 sticky bottom-0 z-40">
+        <button type="button" className="p-3.5 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 rounded-full transition hover:text-gray-800 dark:hover:text-white flex-shrink-0">
           <Paperclip size={20} />
         </button>
-        <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder={`Type as ${currentRole}...`} className="flex-1 bg-gray-50 border border-gray-300 text-gray-800 rounded-full px-5 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-inner" />
-        <button id="submitBtn" type="submit" disabled={isLoading} className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full flex-shrink-0 transition-all shadow-md hover:shadow-lg disabled:opacity-50">
+        <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder={`Type as ${currentRole}...`} className="flex-1 bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 text-gray-900 dark:text-white rounded-full px-6 py-4 focus:outline-none focus:ring-2 focus:ring-blue-500 transition shadow-inner" />
+        <button id="submitBtn" type="submit" disabled={isLoading} className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white p-4 rounded-full transition shadow-md disabled:opacity-50">
           <Send size={22} className="ml-1 mt-1 -mr-1 -mb-1" />
         </button>
       </form>
