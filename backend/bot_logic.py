@@ -309,32 +309,70 @@ async def process_message(session_id: str, message: str) -> str:
             return f"Your hiring request has been created successfully.\n\n{summary}"
 
     
+    # --- 4. CHECK STATUS FLOW WITH CHAT HISTORY ---
     if session["intent"] == "check_status":
         step = session["step"]
         if step == "ask_email":
             if not is_valid_email(message): return "Please provide a valid email format."
             session["data"]["email"] = message
             session["step"] = "ask_phone"
-            return "Got it. Now, please enter your registered **Phone Number**."
+            return "Got it. Now, please enter your registered **Phone Number** to verify your identity."
+            
         elif step == "ask_phone":
             if not is_valid_phone(message): return "Please provide a valid phone number."
             session["data"]["phone"] = message
             
+            
             profile_query = {"email": session["data"]["email"], "phone": session["data"]["phone"]}
             applications = await candidates_collection.find(profile_query).to_list(length=10)
+            
+            
+            past_sessions = await chat_history_collection.find({"message": session["data"]["email"]}).to_list(length=50)
+            past_session_ids = list(set([s["session_id"] for s in past_sessions]))
+            past_session_ids.append(session_id) # Include current session
+            
+           
+            recent_chats = await chat_history_collection.find(
+                {"session_id": {"$in": past_session_ids}}
+            ).sort("timestamp", -1).to_list(length=8)
+            recent_chats.reverse() # Put them back in chronological order
+            
+            
             sessions[session_id] = {"intent": None, "step": None, "data": {}}
             
             if applications:
                 name = applications[0].get("full_name", "Candidate")
-                res = f"**Application Forms Found for {name}** 🎉\n\n"
+                res = f"**Identity Verified! Welcome back, {name}** 🎉\n\n"
+                
+                
+                res += "📋 **YOUR APPLICATIONS:**\n"
                 for idx, app in enumerate(applications, 1):
                     role = app.get("preferred_role", "Unknown Role")
                     status = app.get("screening_status", "Pending HR Review")
-                    res += f"**{idx}. 💼 Role:** {role}\n   📊 **Status:** {status}\n   ━━━━━━━━━━━━━━━━━━━━\n"
+                    res += f"**{idx}. 💼 Role:** {role} | 📊 **Status:** {status}\n"
+                
+                res += "\n━━━━━━━━━━━━━━━━━━━━\n"
+                
+                
+                res += "📜 **YOUR RECENT CHAT HISTORY:**\n"
+                if recent_chats:
+                    for chat in recent_chats:
+                        
+                        role_icon = "👤" if chat['role'] == 'user' else "🤖"
+                        
+                        
+                        msg_text = chat['message'].replace('\n', ' ') 
+                        
+                        short_msg = msg_text[:65] + "..." if len(msg_text) > 65 else msg_text
+                        
+                        res += f"{role_icon} *{short_msg}*\n"
+                else:
+                    res += "*No previous chat history found.*\n"
+                    
                 res += "\nOur team will contact you soon regarding the next steps!"
                 return res
             else:
-                return "❌ **Record Not Found.** Please make sure you entered the exact details you used to apply."
+                return "❌ **Verification Failed.** I couldn't find any applications matching that Email and Phone Number. Please ensure you are using the exact details you applied with."
 
     
     if session["intent"] == "hr_find_candidate":
