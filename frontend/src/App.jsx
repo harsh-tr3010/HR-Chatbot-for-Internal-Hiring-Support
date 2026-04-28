@@ -31,9 +31,9 @@ export default function App() {
     if (isDark) document.documentElement.classList.add('dark');
   }, []);
 
-  // Auto-scroll chat
+  // Auto-scroll chat (FIXED THIS LINE)
   useEffect(() => {
-    endOfMessagesRef.current?.scrollUntilVisible({ behavior: 'smooth' });
+    endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   // Handle Dark Mode Toggle
@@ -94,6 +94,44 @@ export default function App() {
     } catch (error) { setMessages(prev => [...prev, { role: 'bot', text: 'Server error.' }]); } finally { setIsLoading(false); }
   };
 
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setIsLoading(true);
+    setMessages(prev => [...prev, { role: 'user', text: `📎 Uploading: ${file.name}...` }]);
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+      const uploadRes = await axios.post(`${apiUrl}/upload`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      
+      const chatRes = await axios.post(`${apiUrl}/chat`, {
+        session_id: sessionId,
+        message: uploadRes.data.file_url 
+      });
+
+      setMessages(prev => {
+        const newMessages = [...prev];
+        newMessages.pop(); 
+        return [...newMessages, { role: 'user', text: `📎 Attached: ${file.name}` }, { role: 'bot', text: chatRes.data.response }];
+      });
+    } catch (error) {
+      setMessages(prev => {
+        const newMessages = [...prev];
+        newMessages.pop(); 
+        return [...newMessages, { role: 'bot', text: 'Sorry, the file upload failed.' }];
+      });
+    } finally {
+      setIsLoading(false);
+      e.target.value = null; 
+    }
+  };
+
   const handleQuickReply = (text) => {
     setInput(text);
     setTimeout(() => document.getElementById('submitBtn').click(), 50);
@@ -115,12 +153,12 @@ export default function App() {
   };
 
   return (
-    <div className={`relative flex flex-col h-screen max-w-4xl mx-auto ${darkMode ? 'dark' : ''} font-sans overflow-hidden sm:rounded-xl sm:my-4 shadow-3xl border border-gray-100 dark:border-gray-800 bg-[#f8fafc] dark:bg-[#0f172a]`}>
+    <div className={`relative flex flex-col h-screen max-w-4xl mx-auto ${darkMode ? 'dark' : ''} font-sans overflow-hidden sm:rounded-xl sm:my-4 shadow-2xl border border-gray-100 dark:border-gray-800 bg-[#f8fafc] dark:bg-[#0f172a]`}>
       
       {/* 1. AUTH MODAL WITH INTERNAL NAVIGATION */}
       {showAuthModal && (
         <div className="absolute inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4 transition-opacity duration-300">
-          <div className="bg-white dark:bg-gray-900 p-8 rounded-3xl shadow-2xl max-w-sm w-full border border-gray-100 dark:border-gray-800 scale-100 animate-fade-in-up">
+          <div className="bg-white dark:bg-gray-900 p-8 rounded-3xl shadow-2xl max-w-sm w-full border border-gray-100 dark:border-gray-800">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-extrabold text-gray-900 dark:text-white tracking-tight">Candidate Login</h2>
               <button onClick={() => setShowAuthModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"><X size={22}/></button>
@@ -141,8 +179,8 @@ export default function App() {
             <div className="pt-6 border-t border-gray-100 dark:border-gray-800 text-center">
               <p className="text-xs text-gray-400 mb-4 uppercase font-bold tracking-widest">Internal Employee Access</p>
               <div className="flex justify-center gap-3">
-                <button onClick={() => switchRole('Hiring Manager')} className="text-xs font-semibold px-4 py-1.5 bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300 rounded-full hover:bg-purple-100 dark:hover:bg-purple-900 transition">Hiring Manager</button>
-                <button onClick={() => switchRole('HR Admin')} className="text-xs font-semibold px-4 py-1.5 bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300 rounded-full hover:bg-green-100 dark:hover:bg-green-900 transition">HR Admin</button>
+                <button onClick={() => switchRole('Hiring Manager')} className="text-xs font-semibold px-4 py-1.5 bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-full hover:bg-purple-100 dark:hover:bg-purple-900/50 transition">Hiring Manager</button>
+                <button onClick={() => switchRole('HR Admin')} className="text-xs font-semibold px-4 py-1.5 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full hover:bg-green-100 dark:hover:bg-green-900/50 transition">HR Admin</button>
               </div>
             </div>
           </div>
@@ -152,7 +190,7 @@ export default function App() {
       {/* 2. MODERN HEADER WITH GLOWY DROPDOWN & DARK MODE TOGGLE */}
       <div className="flex items-center justify-between px-6 py-5 bg-white dark:bg-gray-950 border-b border-gray-100 dark:border-gray-800 sm:rounded-t-xl sticky top-0 z-40">
         <div className="flex items-center space-x-4">
-          <div className="p-3 bg-blue-50 dark:bg-blue-950 rounded-2xl text-blue-600 dark:text-blue-400 shadow-inner"><Briefcase size={26} /></div>
+          <div className="p-3 bg-blue-50 dark:bg-blue-900/30 rounded-2xl text-blue-600 dark:text-blue-400 shadow-inner"><Briefcase size={26} /></div>
           <div>
             <h1 className="text-xl font-extrabold text-gray-950 dark:text-white tracking-tighter">HR-Chatbot-for-Internal-Hiring-Support</h1>
             <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Digital HR Assistant</p>
@@ -165,12 +203,12 @@ export default function App() {
             {darkMode ? <Sun size={20}/> : <Moon size={20}/>}
           </button>
           
-          {/* 3. ROLE SWITCHER WITH GLOWY BORDER */}
+          {/* ROLE SWITCHER WITH GLOWY BORDER */}
           <div className="relative">
             <select 
               value={currentRole} 
               onChange={handleRoleChange} 
-              className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-semibold rounded-xl block p-3 pr-10 cursor-pointer outline-none border-2 border-transparent focus:border-blue-400 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-950 transition-all duration-300 shadow-lg shadow-blue-500/10 dark:shadow-blue-900/30 appearance-none"
+              className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-semibold rounded-xl block p-3 pr-10 cursor-pointer outline-none border-2 border-transparent focus:border-blue-400 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/30 transition-all duration-300 shadow-lg shadow-blue-500/10 dark:shadow-blue-900/20 appearance-none"
             >
               <option value="Candidate">👤 Candidate</option>
               <option value="Hiring Manager">🟣 Hiring Manager</option>
@@ -182,11 +220,11 @@ export default function App() {
       </div>
 
       {/* CHAT MESSAGES */}
-      <div className="flex-1 p-6 overflow-y-auto space-y-8 bg-[#f8fafc] dark:bg-[#111c30]">
+      <div className="flex-1 p-6 overflow-y-auto space-y-8 bg-[#f8fafc] dark:bg-[#0f172a]">
         {messages.map((msg, idx) => (
-          <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}>
+          <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div className={`flex max-w-[85%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} items-end`}>
-              <div className={`flex-shrink-0 h-9 w-9 rounded-full flex items-center justify-center shadow ${msg.role === 'user' ? 'bg-blue-600 dark:bg-blue-500 ml-3' : 'bg-green-500 dark:bg-green-500 mr-3'}`}>
+              <div className={`flex-shrink-0 h-9 w-9 rounded-full flex items-center justify-center shadow ${msg.role === 'user' ? 'bg-blue-600 dark:bg-blue-500 ml-3' : 'bg-green-500 mr-3'}`}>
                 {msg.role === 'user' ? <User size={18} className="text-white" /> : <Bot size={18} className="text-white" />}
               </div>
               <div className={`p-4 rounded-3xl leading-relaxed text-sm shadow-sm ${msg.role === 'user' ? 'bg-blue-600 dark:bg-blue-500 text-white rounded-br-none' : 'bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-100 border border-gray-100 dark:border-gray-800 rounded-bl-none'}`}>
@@ -197,7 +235,7 @@ export default function App() {
         ))}
         {isLoading && (
           <div className="flex justify-start animate-pulse">
-            <div className="bg-white dark:bg-gray-900 text-gray-500 dark:text-gray-400 px-6 py-4 rounded-full rounded-bl-none text-sm font-medium border dark:border-gray-800">Processing...</div>
+            <div className="bg-white dark:bg-gray-900 text-gray-500 dark:text-gray-400 px-6 py-4 rounded-full rounded-bl-none text-sm font-medium border border-gray-100 dark:border-gray-800">Processing...</div>
           </div>
         )}
         <div ref={endOfMessagesRef} />
@@ -207,27 +245,28 @@ export default function App() {
       <div className="px-5 py-4 bg-white dark:bg-gray-950 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between gap-4">
         <div className="flex gap-2.5 overflow-x-auto pb-1.5 scrollbar-hide items-center flex-1">
             {getQuickReplies().map((btn) => (
-            <button key={btn} onClick={() => handleQuickReply(btn)} className="whitespace-nowrap px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-full text-xs font-semibold border dark:border-gray-700 transition">
+            <button key={btn} onClick={() => handleQuickReply(btn)} className="whitespace-nowrap px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-full text-xs font-semibold border border-transparent dark:border-gray-700 transition">
                 {btn}
             </button>
             ))}
         </div>
         {currentRole === 'HR Admin' && (
-          <a href={`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/export/candidates`} download className="flex-shrink-0 whitespace-nowrap px-5 py-2.5 bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600 text-white rounded-xl text-xs font-bold transition shadow-md">
+          <a href={`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/export/candidates`} download className="flex-shrink-0 whitespace-nowrap px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl text-xs font-bold transition shadow-md">
             📥 Export Excel
           </a>
         )}
       </div>
 
       {/* INPUT FORM */}
-      <form onSubmit={sendMessage} className="p-5 bg-white dark:bg-gray-950 border-t dark:border-gray-800 sm:rounded-b-xl flex items-center gap-4 sticky bottom-0 z-40">
-        <button type="button" className="p-3.5 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 rounded-full transition hover:text-gray-800 dark:hover:text-white flex-shrink-0">
+      <form onSubmit={sendMessage} className="p-5 bg-white dark:bg-gray-950 border-t border-gray-100 dark:border-gray-800 sm:rounded-b-xl flex items-center gap-4 sticky bottom-0 z-40">
+        <button type="button" onClick={() => fileInputRef.current.click()} className="p-3.5 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 rounded-full transition hover:text-gray-800 dark:hover:text-white flex-shrink-0">
           <Paperclip size={20} />
         </button>
         <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder={`Type as ${currentRole}...`} className="flex-1 bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 text-gray-900 dark:text-white rounded-full px-6 py-4 focus:outline-none focus:ring-2 focus:ring-blue-500 transition shadow-inner" />
-        <button id="submitBtn" type="submit" disabled={isLoading} className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white p-4 rounded-full transition shadow-md disabled:opacity-50">
+        <button id="submitBtn" type="submit" disabled={isLoading} className="bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-full transition shadow-md disabled:opacity-50">
           <Send size={22} className="ml-1 mt-1 -mr-1 -mb-1" />
         </button>
+        <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept=".pdf,.doc,.docx" />
       </form>
     </div>
   );
