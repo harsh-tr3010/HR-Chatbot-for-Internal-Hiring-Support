@@ -200,6 +200,8 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             return comp.choices[0].message.content
 
     # --- 2. CANDIDATE FLOW ---
+    # --- 2. CANDIDATE FLOW (WITH AI RESUME PARSING) ---
+    # --- 2. CANDIDATE FLOW (WITH AI RESUME PARSING) ---
     if session["intent"] == "apply_job":
         step = session["step"]
         if step == "ask_role":
