@@ -61,7 +61,7 @@ def is_numeric(val):
         return False
 
 async def evaluate_candidate(data: dict):
-    job = await job_openings_collection.find_one({"title": {"$regex": data['preferred_role'], "$options": "i"}})
+    job = await job_openings_collection.find_one({"title": {"$regex": data.get('preferred_role', ''), "$options": "i"}})
     if not job:
         return "Role not found in active database, but profile saved.", "Pending Review"
 
@@ -114,8 +114,48 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
         sessions[session_id] = {"intent": None, "step": None, "data": {}}
     
     session = sessions[session_id]
-    
-    # --- 1. DETERMINE INTENT ---
+
+    # =====================================================================
+    # --- NEW FEATURE 1: GLOBAL CANCEL COMMAND ---
+    # =====================================================================
+    if message.lower().strip() in ["cancel", "stop", "exit", "start over", "quit", "abort"]:
+        sessions[session_id] = {"intent": None, "step": None, "data": {}}
+        return "🚫 **Process Cancelled.**\n\nI have cleared your current progress. What would you like to do instead?"
+
+    # =====================================================================
+    # --- NEW FEATURE 2: SMART MID-CONVERSATION INTERRUPTION HANDLING ---
+    # =====================================================================
+    if session["intent"] and not message.startswith("uploads/"):
+        # Use LLM to classify if the user is answering the form, or asking a question
+        check_prompt = f"Context: User is currently filling out a form field named '{session['step']}'.\nUser Message: '{message}'\nTask: Is the user providing an answer for the field, or are they asking a separate question/interrupting? Reply STRICTLY with 'ANSWER' or 'QUESTION'."
+        
+        try:
+            comp = groq_client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[{"role": "user", "content": check_prompt}],
+                temperature=0,
+                max_tokens=10
+            )
+            
+            if "QUESTION" in comp.choices[0].message.content.upper():
+                # It's an interruption! Answer their question using Llama 3
+                ans_comp = groq_client.chat.completions.create(
+                    model="llama-3.1-8b-instant",
+                    messages=[
+                        {"role": "system", "content": f"You are an HR assistant talking to a {user_role}. Answer their question briefly and professionally in 1-2 sentences."},
+                        {"role": "user", "content": message}
+                    ]
+                )
+                bot_answer = ans_comp.choices[0].message.content
+                
+                # Format the internal step name to look beautiful (e.g., 'ask_current_ctc' -> 'Current Ctc')
+                step_friendly_name = session['step'].replace('ask_', '').replace('_', ' ').title()
+                
+                return f"💡 {bot_answer}\n\n━━━━━━━━━━━━━━━━━━━━\n⏳ **Now, let's get back to what we were doing!**\nPlease provide your: **{step_friendly_name}**"
+        except Exception as e:
+            print(f"Interruption check skipped: {e}")
+
+    # --- 1. DETERMINE INTENT (If brand new conversation) ---
     if not session["intent"]:
         intent = get_intent(message)
         
@@ -124,7 +164,6 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             all_jobs = await jobs_cursor.to_list(length=50)
             if not all_jobs: return "There are currently no job openings."
             
-            # HR ADMIN VIEW
             if user_role == "HR Admin":
                 res = "🗂️ **Active Job Requisitions (Internal DB)**\n\n"
                 for j in all_jobs:
@@ -134,7 +173,6 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                     res += "   ━━━━━━━━━━━━━━━━━━━━\n"
                 res += "\n💡 *Tip: You can ask me to generate a new job description for any of these roles.*"
                 return res
-            # CANDIDATE VIEW
             else:
                 display_jobs = random.sample(all_jobs, min(5, len(all_jobs)))
                 res = "Here are some of our **Top Open Roles** right now! 🌟\n\n"
@@ -165,59 +203,40 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
 
         elif intent == "hr_admin_queries":
             msg_lower = message.lower()
-            
             if "shortlisted" in msg_lower:
                 cands = await candidates_collection.find({"screening_status": "Shortlisted for next step"}).to_list(10)
                 if not cands: return "No shortlisted candidates found."
                 return "✅ **Shortlisted Candidates:**\n" + "\n".join([f"• {c.get('full_name', 'Unknown')} - {c.get('preferred_role', 'Unknown')} ({c.get('email', '')})" for c in cands])
             
             elif "rejected" in msg_lower or "not suitable" in msg_lower:
-                # FIX: Added "Reject" to the regex and made it case-insensitive!
-                cands = await candidates_collection.find({
-                    "screening_status": {"$regex": "Not suitable|Missing|Reject", "$options": "i"}
-                }).to_list(10)
-                
+                cands = await candidates_collection.find({"screening_status": {"$regex": "Not suitable|Missing|Reject", "$options": "i"}}).to_list(10)
                 if not cands: return "No rejected candidates found."
-                
-                
-                return "❌ **Rejected Candidates:**\n" + "\n".join([
-                    f"• {c.get('full_name', 'Unknown')} - {c.get('preferred_role', 'Unknown')} ({c.get('email', '')}) | Status: *{c.get('screening_status', 'Unknown')}*" 
-                    for c in cands
-                ])
+                return "❌ **Rejected Candidates:**\n" + "\n".join([f"• {c.get('full_name', 'Unknown')} - {c.get('preferred_role', 'Unknown')} ({c.get('email', '')}) | Status: *{c.get('screening_status', 'Unknown')}*" for c in cands])
             
             elif "awaiting" in msg_lower or "interview" in msg_lower:
                 cands = await candidates_collection.find({"screening_status": {"$regex": "interview|Awaiting", "$options": "i"}}).to_list(10)
                 if not cands: return "No candidates currently awaiting an interview."
                 return "⏳ **Awaiting Interview:**\n" + "\n".join([f"• {c.get('full_name', 'Unknown')} - {c.get('preferred_role', 'Unknown')} ({c.get('email', '')})" for c in cands])
             
-            # --- NEW: PENDING CANDIDATE REQUESTS ---
             elif "candidate" in msg_lower and "pending" in msg_lower:
-                # Find candidates with 'Pending' anywhere in their status
                 cands = await candidates_collection.find({"screening_status": {"$regex": "Pending", "$options": "i"}}).to_list(10)
                 if not cands: return "No candidates currently have a pending review status."
                 return "👀 **Candidates Pending HR Review:**\n" + "\n".join([f"• {c.get('full_name', 'Unknown')} - {c.get('preferred_role', 'Unknown')} ({c.get('email', '')})" for c in cands])
             
-            # --- NEW: PENDING HIRING REQUESTS + UNFILLED JOBS (Sorted Newest to Oldest) ---
             elif "pending" in msg_lower or "hiring request" in msg_lower:
-                # Sort by _id -1 to get newest first
                 reqs = await hiring_requests_collection.find({}).sort("_id", -1).to_list(10)
                 jobs = await job_openings_collection.find({}).sort("_id", -1).to_list(10)
-                
                 res = ""
                 if reqs:
                     res += "📝 **Pending Hiring Requests (From Managers):**\n" + "\n".join([f"• **{r.get('role_required', 'Unknown')}** ({r.get('department', 'Unknown')}) - {r.get('positions', 1)} pos." for r in reqs]) + "\n\n"
-                else:
-                    res += "📝 **No pending hiring requests from managers.**\n\n"
-                    
+                else: res += "📝 **No pending hiring requests from managers.**\n\n"
                 if jobs:
                     res += "🗂️ **Unfilled Job Openings (Newest First):**\n" + "\n".join([f"• **{j.get('title', 'Unknown')}** ({j.get('department', 'Unknown')}) - {j.get('location', 'Unknown')}" for j in jobs])
-                else:
-                    res += "🗂️ **No unfilled job openings found.**"
-                    
+                else: res += "🗂️ **No unfilled job openings found.**"
                 return res
-                
             else:
                 return "Please specify what you'd like to see: Shortlisted, Rejected, Awaiting Interview, Pending Candidates, or Pending Hiring Requests."
+
         elif intent == "hr_find_candidate":
             session["intent"] = "hr_find_candidate"
             session["step"] = "ask_identifier"
@@ -241,7 +260,7 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             )
             return comp.choices[0].message.content
 
-    # --- 2. CANDIDATE FLOW (WITH AI RESUME PARSING) ---
+    # --- 2. CANDIDATE FLOW ---
     if session["intent"] == "apply_job":
         step = session["step"]
         if step == "ask_role":
@@ -257,13 +276,7 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                         text = "".join([page.extract_text() for page in reader.pages if page.extract_text()])
                     
                     sys_prompt = """You are an expert HR resume parser. Extract the following details from the text and return ONLY a valid JSON object.
-                    Required keys: 
-                    - 'full_name' (string)
-                    - 'email' (string)
-                    - 'phone' (string)
-                    - 'location' (string)
-                    - 'skills' (comma separated string)
-                    - 'experiences' (list of objects with 'start' and 'end' keys strictly in 'YYYY-MM' format. If currently working there, set 'end' to 'Present')."""
+                    Required keys: 'full_name', 'email', 'phone', 'location', 'skills', 'experiences' (list of objects with 'start' and 'end' keys strictly in 'YYYY-MM' format. If currently working there, set 'end' to 'Present')."""
                     
                     comp = groq_client.chat.completions.create(
                         model="llama-3.1-8b-instant",
@@ -273,10 +286,8 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                         ],
                         response_format={"type": "json_object"}
                     )
-                    
                     parsed_data = json.loads(comp.choices[0].message.content)
                     
-                    # PRECISE PYTHON EXPERIENCE CALCULATION
                     total_months = 0
                     current_date = datetime.datetime.now()
                     
@@ -284,19 +295,15 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                         try:
                             start_str = exp.get("start", "")
                             end_str = exp.get("end", "")
-                            
                             start_date = datetime.datetime.strptime(start_str, "%Y-%m")
-                            
                             if end_str.lower() == "present":
                                 end_date = current_date
                             else:
                                 end_date = datetime.datetime.strptime(end_str, "%Y-%m")
                                 
                             months = (end_date.year - start_date.year) * 12 + (end_date.month - start_date.month)
-                            if months > 0:
-                                total_months += months
+                            if months > 0: total_months += months
                         except Exception as e:
-                            print(f"Date parsing skipped for: {exp} - Error: {e}")
                             continue
                             
                     calculated_years = round(total_months / 12.0, 1)
@@ -306,17 +313,15 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                     session["data"]["resume_link"] = message
                     session["step"] = "ask_current_ctc"
                     
-                    return f"✅ **Resume Parsed Successfully!**\n\n👤 Name: {session['data'].get('full_name')}\n📧 Email: {session['data'].get('email')}\n📍 Location: {session['data'].get('location')}\n🎓 Exp: **{calculated_years} yrs** ({total_months} months accurately computed!)\n🛠️ Skills: {session['data'].get('skills')}\n\nJust two more questions! What is your **Current CTC**? (Enter a number)"
+                    return f"✅ **Resume Parsed Successfully!**\n\n👤 Name: {session['data'].get('full_name')}\n📧 Email: {session['data'].get('email')}\n📍 Location: {session['data'].get('location')}\n🎓 Exp: **{calculated_years} yrs**\n🛠️ Skills: {session['data'].get('skills')}\n\nJust two more questions! What is your **Current CTC**? (Enter a number)"
                     
                 except Exception as e:
-                    print("Parse error:", e)
                     session["step"] = "ask_name"
                     return "Sorry, I couldn't read that PDF. Let's do it manually. Please share your **Full Name**."
             else:
                 session["step"] = "ask_name"
                 return "No problem! Let's do it manually. Please share your **Full Name**."
 
-        # MANUAL FALLBACK FLOW
         elif step == "ask_name":
             session["data"]["full_name"] = message
             session["step"] = "ask_email"
@@ -367,7 +372,6 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
         elif step == "ask_notice_period":
             session["data"]["notice_period"] = message
             
-            # Check if resume was autofilled
             if "resume_link" in session["data"]:
                 summary, status = await evaluate_candidate(session["data"])
                 session["data"]["screening_status"] = status
