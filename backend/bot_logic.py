@@ -3,7 +3,7 @@ import re
 import random
 import asyncio
 from groq import Groq
-from database import job_openings_collection, candidates_collection, hiring_requests_collection
+from database import job_openings_collection, candidates_collection, hiring_requests_collection, chat_history_collection
 from dotenv import load_dotenv
 
 load_dotenv()
