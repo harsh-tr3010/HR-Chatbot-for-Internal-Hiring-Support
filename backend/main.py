@@ -11,6 +11,7 @@ from database import seed_data, chat_history_collection
 import datetime
 import os
 import shutil
+from pydantic import BaseModel
 
 app = FastAPI(title="HR Chatbot API", version="1.0.0")
 
@@ -24,8 +25,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Ensure an uploads directory exists
+class LoginRequest(BaseModel):
+    email: str
+    phone: str
 os.makedirs("uploads", exist_ok=True)
+
+@app.post("/candidate/login")
+async def candidate_login(request: LoginRequest):
+    email = request.email.strip()
+    
+    # Search for past sessions where this email was provided
+    past_sessions = await chat_history_collection.find({"role": "user", "message": email}).to_list(length=20)
+    
+    history = []
+    last_session_id = None
+    
+    if past_sessions:
+        # Get the most recent session ID
+        past_sessions.sort(key=lambda x: x["timestamp"], reverse=True)
+        last_session_id = past_sessions[0]["session_id"]
+        
+        # Fetch all messages from that specific session
+        chats = await chat_history_collection.find({"session_id": last_session_id}).sort("timestamp", 1).to_list(length=100)
+        
+        for c in chats:
+            history.append({"role": c["role"], "text": c["message"]})
+            
+    return {
+        "success": True,
+        "session_id": last_session_id,
+        "history": history
+    }
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
