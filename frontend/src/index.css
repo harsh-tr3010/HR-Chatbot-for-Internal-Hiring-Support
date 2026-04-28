@@ -3,5 +3,5 @@
 @tailwind utilities;
 
 body {
-  background-color: #f3f4f6;
+  @apply bg-[#f8fafc] dark:bg-[#0f172a] m-0 p-0;
 }
