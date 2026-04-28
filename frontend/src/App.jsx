@@ -185,9 +185,13 @@ export default function App() {
         </div>
       )}
 
-      {/* FULL WIDTH HEADER */}
+      {/* FULL WIDTH HEADER (STRETCHES TO EDGES) */}
       <div className="w-full bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 sticky top-0 z-40 transition-colors duration-300">
-        <div className="max-w-6xl mx-auto flex items-center justify-between px-6 py-4">
+        
+        {/* FIX: Removed max-w-6xl and mx-auto so it sits in the absolute corners */}
+        <div className="w-full flex items-center justify-between px-6 py-4">
+          
+          {/* Top Left: Logo and Title */}
           <div className="flex items-center space-x-4">
             <div className="p-3 bg-blue-50 dark:bg-blue-950 rounded-2xl text-blue-600 dark:text-blue-400 shadow-inner"><Briefcase size={26} /></div>
             <div>
@@ -196,6 +200,7 @@ export default function App() {
             </div>
           </div>
           
+          {/* Top Right: Dark Mode & Role Switcher */}
           <div className="flex items-center gap-4">
             <button onClick={toggleDarkMode} className="p-2.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-700 transition-all">
               {darkMode ? <Sun size={20}/> : <Moon size={20}/>}
@@ -214,6 +219,7 @@ export default function App() {
               <MonitorDot size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
             </div>
           </div>
+          
         </div>
       </div>
 
