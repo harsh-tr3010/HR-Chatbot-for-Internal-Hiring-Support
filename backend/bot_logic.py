@@ -1,7 +1,6 @@
 import os
 import re
 import random
-import asyncio
 from groq import Groq
 from database import job_openings_collection, candidates_collection, hiring_requests_collection, chat_history_collection
 from dotenv import load_dotenv
@@ -20,6 +19,7 @@ def get_intent(user_message: str) -> str:
     - check_status (User wants to check their job application status)
     - hr_admin_queries (HR asking to show shortlisted, rejected, awaiting interview, or pending requests)
     - hr_find_candidate (HR asking to show candidate details or summary by email/phone)
+    - hr_update_status (HR asking to change, update, or manage a candidate's status)
     - hr_generate_jd (HR asking to generate a job description)
     - general_faq (Asking about hiring process, documents required, response time)
     
@@ -46,17 +46,6 @@ def is_numeric(val):
         return True
     except ValueError:
         return False
-async def send_hr_email_notification(candidate_name, role, status):
-    """
-    BONUS FEATURE: Email Notification to HR.
-    In production, use smtplib or SendGrid API here.
-    """
-    await asyncio.sleep(1) 
-    print("\n" + "="*50)
-    print(f"📧 EMAIL SENT TO: hr-team@company.com")
-    print(f"Subject: New Application - {candidate_name} for {role}")
-    print(f"Body: A new candidate has applied. Screening status: {status}. Please check the admin dashboard.")
-    print("="*50 + "\n")
 
 async def evaluate_candidate(data: dict):
     job = await job_openings_collection.find_one({"title": {"$regex": data['preferred_role'], "$options": "i"}})
@@ -96,7 +85,7 @@ async def process_message(session_id: str, message: str) -> str:
     
     session = sessions[session_id]
     
-    
+    # --- 1. DETERMINE INTENT ---
     if not session["intent"]:
         intent = get_intent(message)
         
@@ -132,7 +121,6 @@ async def process_message(session_id: str, message: str) -> str:
             session["step"] = "ask_email"
             return "I can help you check your application status! 📋 Please enter your registered **Email ID**."
 
-        
         elif intent == "hr_admin_queries":
             msg_lower = message.lower()
             if "shortlisted" in msg_lower:
@@ -158,6 +146,12 @@ async def process_message(session_id: str, message: str) -> str:
             session["intent"] = "hr_find_candidate"
             session["step"] = "ask_identifier"
             return "Please provide the candidate's **Email ID** or **Phone Number**."
+
+        # --- NEW INTENT TRIGGER ---
+        elif intent == "hr_update_status":
+            session["intent"] = "hr_update_status"
+            session["step"] = "ask_identifier"
+            return "I can help update a candidate's status. Please provide the candidate's **Email ID** or **Phone Number**."
             
         elif intent == "hr_generate_jd":
             session["intent"] = "hr_generate_jd"
@@ -172,7 +166,7 @@ async def process_message(session_id: str, message: str) -> str:
             )
             return comp.choices[0].message.content
 
-    
+    # --- 2. CANDIDATE FLOW ---
     if session["intent"] == "apply_job":
         step = session["step"]
         if step == "ask_role":
@@ -236,17 +230,23 @@ async def process_message(session_id: str, message: str) -> str:
             session["data"]["screening_status"] = status
             
             await candidates_collection.insert_one(session["data"])
-            import asyncio
-            asyncio.create_task(send_hr_email_notification(
-                session["data"]["full_name"], 
-                session["data"]["preferred_role"], 
-                status
-            ))
-            sessions[session_id] = {"intent": None, "step": None, "data": {}}
             
+            # Trigger background Email Notification to HR
+            import asyncio
+            async def send_hr_email_notification(candidate_name, role, current_status):
+                await asyncio.sleep(1)
+                print("\n" + "="*50)
+                print(f"📧 EMAIL SENT TO: hr-team@company.com")
+                print(f"Subject: New Application - {candidate_name} for {role}")
+                print(f"Body: A new candidate has applied. Screening status: {current_status}. Please check the admin dashboard.")
+                print("="*50 + "\n")
+            
+            asyncio.create_task(send_hr_email_notification(session["data"]["full_name"], session["data"]["preferred_role"], status))
+            
+            sessions[session_id] = {"intent": None, "step": None, "data": {}}
             return f"Thank you. Based on your profile, you are **{status}**. Your application for **{session['data']['preferred_role']}** has been successfully saved and linked to your email ({session['data']['email']}).\n\n{summary}"
 
-    
+    # --- 3. HIRING MANAGER FLOW ---
     if session["intent"] == "raise_hiring_request":
         step = session["step"]
         if step == "ask_dept":
@@ -308,7 +308,6 @@ async def process_message(session_id: str, message: str) -> str:
             sessions[session_id] = {"intent": None, "step": None, "data": {}}
             return f"Your hiring request has been created successfully.\n\n{summary}"
 
-    
     # --- 4. CHECK STATUS FLOW WITH CHAT HISTORY ---
     if session["intent"] == "check_status":
         step = session["step"]
@@ -322,27 +321,47 @@ async def process_message(session_id: str, message: str) -> str:
             if not is_valid_phone(message): return "Please provide a valid phone number."
             session["data"]["phone"] = message
             
-            # Fetch Applications
             profile_query = {"email": session["data"]["email"], "phone": session["data"]["phone"]}
             applications = await candidates_collection.find(profile_query).to_list(length=10)
+            
+            past_sessions = await chat_history_collection.find({"message": session["data"]["email"]}).to_list(length=50)
+            past_session_ids = list(set([s["session_id"] for s in past_sessions]))
+            past_session_ids.append(session_id)
+            
+            recent_chats = await chat_history_collection.find(
+                {"session_id": {"$in": past_session_ids}}
+            ).sort("timestamp", -1).to_list(length=8)
+            recent_chats.reverse()
             
             sessions[session_id] = {"intent": None, "step": None, "data": {}}
             
             if applications:
                 name = applications[0].get("full_name", "Candidate")
                 res = f"**Identity Verified! Welcome back, {name}** 🎉\n\n"
+                
                 res += "📋 **YOUR APPLICATIONS:**\n"
                 for idx, app in enumerate(applications, 1):
                     role = app.get("preferred_role", "Unknown Role")
                     status = app.get("screening_status", "Pending HR Review")
                     res += f"**{idx}. 💼 Role:** {role} | 📊 **Status:** {status}\n"
                 
+                res += "\n━━━━━━━━━━━━━━━━━━━━\n"
+                res += "📜 **YOUR RECENT CHAT HISTORY:**\n"
+                if recent_chats:
+                    for chat in recent_chats:
+                        role_icon = "👤" if chat['role'] == 'user' else "🤖"
+                        msg_text = chat['message'].replace('\n', ' ') 
+                        short_msg = msg_text[:65] + "..." if len(msg_text) > 65 else msg_text
+                        res += f"{role_icon} *{short_msg}*\n"
+                else:
+                    res += "*No previous chat history found.*\n"
+                    
                 res += "\nOur team will contact you soon regarding the next steps!"
                 return res
             else:
                 return "❌ **Verification Failed.** I couldn't find any applications matching that Email and Phone Number."
 
-    
+    # --- 5. HR FIND CANDIDATE / SUMMARY FLOW ---
     if session["intent"] == "hr_find_candidate":
         step = session["step"]
         if step == "ask_identifier":
@@ -359,7 +378,7 @@ async def process_message(session_id: str, message: str) -> str:
             else:
                 return "❌ No candidate found with that email or phone number."
 
-    
+    # --- 6. HR GENERATE JOB DESCRIPTION FLOW ---
     if session["intent"] == "hr_generate_jd":
         step = session["step"]
         if step == "ask_role":
@@ -380,5 +399,35 @@ async def process_message(session_id: str, message: str) -> str:
             
             sessions[session_id] = {"intent": None, "step": None, "data": {}}
             return f"**Here is your AI-Generated Job Description:** ✨\n\n{comp.choices[0].message.content}"
+
+    # --- 7. NEW: HR UPDATE CANDIDATE STATUS FLOW ---
+    if session["intent"] == "hr_update_status":
+        step = session["step"]
+        if step == "ask_identifier":
+            # Find the candidate
+            cand = await candidates_collection.find_one({
+                "$or": [{"email": message}, {"phone": message}]
+            })
+            
+            if cand:
+                session["data"]["target_email"] = cand["email"]
+                session["step"] = "ask_new_status"
+                return f"✅ Candidate found: **{cand['full_name']}**\n📊 Current Status: *{cand.get('screening_status', 'Pending')}*\n\nWhat should their **New Status** be? (e.g., 'Awaiting Interview', 'Hired', 'Rejected')"
+            else:
+                sessions[session_id] = {"intent": None, "step": None, "data": {}}
+                return "❌ No candidate found with that email or phone number. Please try again."
+                
+        elif step == "ask_new_status":
+            new_status = message
+            target_email = session["data"]["target_email"]
+            
+            # Update the status in MongoDB for all applications associated with this email
+            await candidates_collection.update_many(
+                {"email": target_email},
+                {"$set": {"screening_status": new_status}}
+            )
+            
+            sessions[session_id] = {"intent": None, "step": None, "data": {}}
+            return f"🔄 Success! The status for **{target_email}** has been updated to **{new_status}**."
 
     return "I didn't quite understand. You can ask to view jobs, apply for a job, raise a hiring request, or check shortlisted candidates."

@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Send, User, Bot, Briefcase, Paperclip, X, Moon, Sun, MonitorDot } from 'lucide-react';
 
 export default function App() {
-  // --- UI STATES ---
+  
   const [currentRole, setCurrentRole] = useState('Candidate');
   const [darkMode, setDarkMode] = useState(false);
   const [messages, setMessages] = useState([
@@ -14,7 +14,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState('');
   
-  // --- MODAL STATES ---
+  
   const [showAuthModal, setShowAuthModal] = useState(true);
   const [authEmail, setAuthEmail] = useState('');
   const [authPhone, setAuthPhone] = useState('');
@@ -23,7 +23,7 @@ export default function App() {
   const endOfMessagesRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  // Initialize session and dark mode preference on load
+  
   useEffect(() => {
     setSessionId(uuidv4());
     const isDark = localStorage.getItem('theme') === 'dark';
@@ -31,12 +31,12 @@ export default function App() {
     if (isDark) document.documentElement.classList.add('dark');
   }, []);
 
-  // Auto-scroll chat (FIXED THIS LINE)
+  
   useEffect(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Handle Dark Mode Toggle
+  
   const toggleDarkMode = () => {
     setDarkMode(!darkMode);
     if (!darkMode) {
@@ -187,7 +187,7 @@ export default function App() {
         </div>
       )}
 
-      {/* 2. MODERN HEADER WITH GLOWY DROPDOWN & DARK MODE TOGGLE */}
+      
       <div className="flex items-center justify-between px-6 py-5 bg-white dark:bg-gray-950 border-b border-gray-100 dark:border-gray-800 sm:rounded-t-xl sticky top-0 z-40">
         <div className="flex items-center space-x-4">
           <div className="p-3 bg-blue-50 dark:bg-blue-900/30 rounded-2xl text-blue-600 dark:text-blue-400 shadow-inner"><Briefcase size={26} /></div>
