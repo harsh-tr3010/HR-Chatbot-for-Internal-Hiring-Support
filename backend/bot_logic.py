@@ -79,7 +79,7 @@ async def evaluate_candidate(data: dict):
     """
     return summary, status
 
-async def process_message(session_id: str, message: str) -> str:
+async def process_message(session_id: str, message: str, user_role: str = "Candidate") -> str:
     if session_id not in sessions:
         sessions[session_id] = {"intent": None, "step": None, "data": {}}
     
@@ -94,17 +94,30 @@ async def process_message(session_id: str, message: str) -> str:
             all_jobs = await jobs_cursor.to_list(length=50)
             if not all_jobs: return "There are currently no job openings."
             
-            display_jobs = random.sample(all_jobs, min(5, len(all_jobs)))
-            res = "Here are some of our **Top Open Roles** right now! 🌟\n\n"
-            for j in display_jobs:
-                res += f"💼 **{j['title']}**\n"
-                res += f"🏢 *{j['department']}* | 📍 {j['location']}\n"
-                res += f"🎓 **Exp:** {j['experience_required']}+ years | ⏳ **Type:** {j.get('employment_type', 'Full-time')}\n"
-                res += f"🛠️ **Skills:** {', '.join(j['skills_required'])}\n"
-                res += f"📝 *{j.get('description', 'Join our amazing team!')}*\n"
-                res += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            res += "Ready? Reply with **'I want to apply for a job'** to start your application! 🚀"
-            return res
+            # --- HR ADMIN VIEW ---
+            if user_role == "HR Admin":
+                res = "🗂️ **Active Job Requisitions (Internal DB)**\n\n"
+                for j in all_jobs:
+                    res += f"🔹 **{j['title']}** ({j['department']})\n"
+                    res += f"   📍 Loc: {j['location']} | 🎓 Exp: {j['experience_required']}+ yrs\n"
+                    res += f"   🛠️ Skills Req: {', '.join(j['skills_required'])}\n"
+                    res += "   ━━━━━━━━━━━━━━━━━━━━\n"
+                res += "\n💡 *Tip: You can ask me to generate a new job description for any of these roles.*"
+                return res
+                
+            # --- CANDIDATE VIEW ---
+            else:
+                display_jobs = random.sample(all_jobs, min(5, len(all_jobs)))
+                res = "Here are some of our **Top Open Roles** right now! 🌟\n\n"
+                for j in display_jobs:
+                    res += f"💼 **{j['title']}**\n"
+                    res += f"🏢 *{j['department']}* | 📍 {j['location']}\n"
+                    res += f"🎓 **Exp:** {j['experience_required']}+ years | ⏳ **Type:** {j.get('employment_type', 'Full-time')}\n"
+                    res += f"🛠️ **Skills:** {', '.join(j['skills_required'])}\n"
+                    res += f"📝 *{j.get('description', 'Join our amazing team!')}*\n"
+                    res += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                res += "Ready? Reply with **'I want to apply for a job'** to start your application! 🚀"
+                return res
 
         elif intent == "apply_job":
             session["intent"] = "apply_job"

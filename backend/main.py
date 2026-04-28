@@ -90,22 +90,23 @@ async def upload_file(file: UploadFile = File(...)):
 async def chat_endpoint(request: ChatRequest):
     import datetime
     
-    # Save user message WITH the role
+    # Save user message WITH the role tag
     await chat_history_collection.insert_one({
         "session_id": request.session_id,
         "role": "user",
-        "user_role": request.user_role,  # <--- Strict isolation
+        "user_role": request.user_role,
         "message": request.message,
         "timestamp": datetime.datetime.utcnow()
     })
     
-    bot_reply = await process_message(request.session_id, request.message)
+    # Pass user_role into process_message!
+    bot_reply = await process_message(request.session_id, request.message, request.user_role)
     
-    # Save bot reply WITH the role
+    # Save bot reply WITH the role tag
     await chat_history_collection.insert_one({
         "session_id": request.session_id,
         "role": "bot",
-        "user_role": request.user_role,  # <--- Strict isolation
+        "user_role": request.user_role,
         "message": bot_reply,
         "timestamp": datetime.datetime.utcnow()
     })
