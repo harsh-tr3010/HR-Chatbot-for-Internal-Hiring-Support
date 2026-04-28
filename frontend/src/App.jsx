@@ -147,7 +147,15 @@ export default function App() {
   const getQuickReplies = () => {
     if (currentRole === 'Candidate') return ['View job openings', 'Apply for a job', 'Check application status'];
     if (currentRole === 'Hiring Manager') return ['I want to raise a hiring request'];
-    if (currentRole === 'HR Admin') return ['Pending hiring requests', 'Shortlisted candidates', 'Show rejected candidates', 'Find candidate details', 'Update candidate status', 'Generate job description'];
+    if (currentRole === 'HR Admin') return [
+      'Pending hiring requests', 
+      'Pending candidate requests', 
+      'Shortlisted candidates', 
+      'Show rejected candidates', 
+      'Find candidate details', 
+      'Update candidate status', 
+      'Generate job description'
+    ];
     return [];
   };
 
