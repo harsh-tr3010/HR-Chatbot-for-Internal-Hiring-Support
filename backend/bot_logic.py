@@ -204,14 +204,49 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
         step = session["step"]
         if step == "ask_role":
             session["data"]["preferred_role"] = message
-            session["step"] = "ask_name"
-            return "Great. Please share your full name."
+            session["step"] = "ask_autofill"
+            return "Great choice! 📄 **Would you like to autofill your application using your resume?**\n\nClick the 📎 icon below to upload a PDF, or type **'No'** to fill out the form manually."
+            
+        elif step == "ask_autofill":
+            if "uploads/" in message and message.endswith(".pdf"):
+                # --- AI RESUME PARSER ACTIVE ---
+                try:
+                    with open(message, 'rb') as f:
+                        reader = PyPDF2.PdfReader(f)
+                        text = "".join([page.extract_text() for page in reader.pages if page.extract_text()])
+                    
+                    # Ask Llama 3 to parse the text into structured JSON
+                    sys_prompt = "You are an expert HR resume parser. Extract the following details from the text and return ONLY a valid JSON object with these exact keys: 'full_name', 'email', 'phone', 'location', 'highest_qualification', 'total_experience' (numeric only, e.g. '3.5'), 'skills' (comma separated string). If a value is missing, put 'Unknown'."
+                    comp = groq_client.chat.completions.create(
+                        model="llama-3.1-8b-instant",
+                        messages=[
+                            {"role": "system", "content": sys_prompt}, 
+                            {"role": "user", "content": f"Resume Text:\n{text[:3500]}"} # Send first 3500 chars to avoid token limits
+                        ],
+                        response_format={"type": "json_object"} # Force perfect JSON output
+                    )
+                    
+                    parsed_data = json.loads(comp.choices[0].message.content)
+                    session["data"].update(parsed_data)
+                    session["data"]["resume_link"] = message
+                    session["step"] = "ask_current_ctc"
+                    
+                    return f"✅ **Resume Parsed Successfully!**\n\n👤 Name: {session['data'].get('full_name')}\n📧 Email: {session['data'].get('email')}\n📍 Location: {session['data'].get('location')}\n🎓 Exp: {session['data'].get('total_experience')} yrs\n🛠️ Skills: {session['data'].get('skills')}\n\nJust two more questions! What is your **Current CTC**? (Enter a number)"
+                    
+                except Exception as e:
+                    session["step"] = "ask_name"
+                    return "Sorry, I couldn't read that PDF. Let's do it manually. Please share your **Full Name**."
+            else:
+                session["step"] = "ask_name"
+                return "No problem! Let's do it manually. Please share your **Full Name**."
+
+        # --- MANUAL FALLBACK FLOW ---
         elif step == "ask_name":
             session["data"]["full_name"] = message
             session["step"] = "ask_email"
             return f"Thanks {message}. Please share your email ID."
         elif step == "ask_email":
-            if not is_valid_email(message): return "Please provide a valid email format (e.g., name@domain.com)."
+            if not is_valid_email(message): return "Please provide a valid email format."
             session["data"]["email"] = message
             session["step"] = "ask_phone"
             return "Please share your phone number."
@@ -229,12 +264,12 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             session["step"] = "ask_total_exp"
             return "How many years of total experience do you have? (Enter a number)"
         elif step == "ask_total_exp":
-            if not is_numeric(message): return "Experience must be a numeric value. Please try again."
+            if not is_numeric(message): return "Experience must be a numeric value."
             session["data"]["total_experience"] = message
             session["step"] = "ask_relevant_exp"
             return "How many years of relevant experience do you have for this role?"
         elif step == "ask_relevant_exp":
-            if not is_numeric(message): return "Must be a numeric value. Please try again."
+            if not is_numeric(message): return "Must be a numeric value."
             session["data"]["relevant_experience"] = message
             session["step"] = "ask_skills"
             return "Please list your key skills (separated by commas)."
@@ -242,6 +277,8 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             session["data"]["skills"] = message
             session["step"] = "ask_current_ctc"
             return "What is your current CTC? (Enter a number)"
+        
+        # --- RESUME/MANUAL PATHS MERGE HERE ---
         elif step == "ask_current_ctc":
             if not is_numeric(message.replace(',','')): return "CTC must be numeric."
             session["data"]["current_ctc"] = message
@@ -254,16 +291,32 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             return "What is your notice period (in days)?"
         elif step == "ask_notice_period":
             session["data"]["notice_period"] = message
-            session["step"] = "ask_resume"
-            return "Finally, please provide a link to your resume, or click the attachment (📎) icon below to upload it."
+            
+            # If they already uploaded a resume at the start, skip asking for it again!
+            if "resume_link" in session["data"]:
+                summary, status = await evaluate_candidate(session["data"])
+                session["data"]["screening_status"] = status
+                await candidates_collection.insert_one(session["data"])
+                
+                # Background Email
+                asyncio.create_task(send_hr_email_notification(session["data"].get("full_name"), session["data"].get("preferred_role"), status))
+                sessions[session_id] = {"intent": None, "step": None, "data": {}}
+                
+                return f"Thank you. Based on your profile, you are **{status}**. Your application has been successfully saved.\n\n{summary}"
+            else:
+                session["step"] = "ask_resume"
+                return "Finally, please provide a link to your resume, or click the attachment (📎) icon below to upload a PDF."
+                
         elif step == "ask_resume":
             session["data"]["resume_link"] = message
-            
             summary, status = await evaluate_candidate(session["data"])
             session["data"]["screening_status"] = status
             
             await candidates_collection.insert_one(session["data"])
+            asyncio.create_task(send_hr_email_notification(session["data"].get("full_name"), session["data"].get("preferred_role"), status))
+            sessions[session_id] = {"intent": None, "step": None, "data": {}}
             
+            return f"Thank you. Based on your profile, you are **{status}**. Your application has been successfully saved.\n\n{summary}"            
             
             import asyncio
             async def send_hr_email_notification(candidate_name, role, current_status):
