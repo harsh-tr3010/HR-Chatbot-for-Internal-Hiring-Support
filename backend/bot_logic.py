@@ -199,9 +199,6 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             )
             return comp.choices[0].message.content
 
-    # --- 2. CANDIDATE FLOW ---
-    # --- 2. CANDIDATE FLOW (WITH AI RESUME PARSING) ---
-    # --- 2. CANDIDATE FLOW (WITH AI RESUME PARSING) ---
     if session["intent"] == "apply_job":
         step = session["step"]
         if step == "ask_role":
@@ -213,29 +210,72 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             if "uploads/" in message and message.endswith(".pdf"):
                 # --- AI RESUME PARSER ACTIVE ---
                 try:
+                    import datetime # Ensure date calculation tools are available
+                    import json
+                    import PyPDF2
+                    
                     with open(message, 'rb') as f:
                         reader = PyPDF2.PdfReader(f)
                         text = "".join([page.extract_text() for page in reader.pages if page.extract_text()])
                     
-                    # Ask Llama 3 to parse the text into structured JSON
-                    sys_prompt = "You are an expert HR resume parser. Extract the following details from the text and return ONLY a valid JSON object with these exact keys: 'full_name', 'email', 'phone', 'location', 'highest_qualification', 'total_experience' (numeric only, e.g. '3.5'), 'skills' (comma separated string). If a value is missing, put 'Unknown'."
+                    # 1. Ask Llama 3 to extract strict date formats for experiences
+                    sys_prompt = """You are an expert HR resume parser. Extract the following details from the text and return ONLY a valid JSON object.
+                    Required keys: 
+                    - 'full_name' (string)
+                    - 'email' (string)
+                    - 'phone' (string)
+                    - 'location' (string)
+                    - 'skills' (comma separated string)
+                    - 'experiences' (list of objects with 'start' and 'end' keys strictly in 'YYYY-MM' format. If currently working there, set 'end' to 'Present')."""
+                    
                     comp = groq_client.chat.completions.create(
                         model="llama-3.1-8b-instant",
                         messages=[
                             {"role": "system", "content": sys_prompt}, 
-                            {"role": "user", "content": f"Resume Text:\n{text[:3500]}"} # Send first 3500 chars to avoid token limits
+                            {"role": "user", "content": f"Resume Text:\n{text[:3500]}"}
                         ],
-                        response_format={"type": "json_object"} # Force perfect JSON output
+                        response_format={"type": "json_object"}
                     )
                     
                     parsed_data = json.loads(comp.choices[0].message.content)
+                    
+                    # --- 2. PRECISE PYTHON EXPERIENCE CALCULATION ---
+                    total_months = 0
+                    current_date = datetime.datetime.now()
+                    
+                    for exp in parsed_data.get("experiences", []):
+                        try:
+                            start_str = exp.get("start", "")
+                            end_str = exp.get("end", "")
+                            
+                            start_date = datetime.datetime.strptime(start_str, "%Y-%m")
+                            
+                            if end_str.lower() == "present":
+                                end_date = current_date
+                            else:
+                                end_date = datetime.datetime.strptime(end_str, "%Y-%m")
+                                
+                            # Calculate exact months difference
+                            months = (end_date.year - start_date.year) * 12 + (end_date.month - start_date.month)
+                            if months > 0:
+                                total_months += months
+                        except Exception as e:
+                            print(f"Date parsing skipped for: {exp} - Error: {e}")
+                            continue
+                            
+                    # Convert to years (rounded to 1 decimal place, e.g., 7 months = 0.6 yrs)
+                    calculated_years = round(total_months / 12.0, 1)
+                    
+                    # 3. Save to session
                     session["data"].update(parsed_data)
+                    session["data"]["total_experience"] = str(calculated_years)
                     session["data"]["resume_link"] = message
                     session["step"] = "ask_current_ctc"
                     
-                    return f"✅ **Resume Parsed Successfully!**\n\n👤 Name: {session['data'].get('full_name')}\n📧 Email: {session['data'].get('email')}\n📍 Location: {session['data'].get('location')}\n🎓 Exp: {session['data'].get('total_experience')} yrs\n🛠️ Skills: {session['data'].get('skills')}\n\nJust two more questions! What is your **Current CTC**? (Enter a number)"
+                    return f"✅ **Resume Parsed Successfully!**\n\n👤 Name: {session['data'].get('full_name')}\n📧 Email: {session['data'].get('email')}\n📍 Location: {session['data'].get('location')}\n🎓 Exp: **{calculated_years} yrs** ({total_months} months accurately computed!)\n🛠️ Skills: {session['data'].get('skills')}\n\nJust two more questions! What is your **Current CTC**? (Enter a number)"
                     
                 except Exception as e:
+                    print("Parse error:", e)
                     session["step"] = "ask_name"
                     return "Sorry, I couldn't read that PDF. Let's do it manually. Please share your **Full Name**."
             else:
