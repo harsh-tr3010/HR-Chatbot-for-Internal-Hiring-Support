@@ -165,25 +165,50 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
 
         elif intent == "hr_admin_queries":
             msg_lower = message.lower()
+            
             if "shortlisted" in msg_lower:
                 cands = await candidates_collection.find({"screening_status": "Shortlisted for next step"}).to_list(10)
                 if not cands: return "No shortlisted candidates found."
-                return "✅ **Shortlisted Candidates:**\n" + "\n".join([f"• {c['full_name']} - {c['preferred_role']} ({c['email']})" for c in cands])
+                return "✅ **Shortlisted Candidates:**\n" + "\n".join([f"• {c.get('full_name', 'Unknown')} - {c.get('preferred_role', 'Unknown')} ({c.get('email', '')})" for c in cands])
+            
             elif "rejected" in msg_lower or "not suitable" in msg_lower:
                 cands = await candidates_collection.find({"screening_status": {"$regex": "Not suitable|Missing"}}).to_list(10)
                 if not cands: return "No rejected candidates found."
-                return "❌ **Rejected Candidates:**\n" + "\n".join([f"• {c['full_name']} - {c['preferred_role']} ({c['email']})" for c in cands])
+                return "❌ **Rejected Candidates:**\n" + "\n".join([f"• {c.get('full_name', 'Unknown')} - {c.get('preferred_role', 'Unknown')} ({c.get('email', '')})" for c in cands])
+            
             elif "awaiting" in msg_lower or "interview" in msg_lower:
                 cands = await candidates_collection.find({"screening_status": {"$regex": "interview|Awaiting", "$options": "i"}}).to_list(10)
                 if not cands: return "No candidates currently awaiting an interview."
-                return "⏳ **Awaiting Interview:**\n" + "\n".join([f"• {c['full_name']} - {c['preferred_role']} ({c['email']})" for c in cands])
-            elif "pending" in msg_lower or "request" in msg_lower:
-                reqs = await hiring_requests_collection.find({}).to_list(10)
-                if not reqs: return "No pending hiring requests."
-                return "📝 **Pending Hiring Requests:**\n" + "\n".join([f"• **{r['role_required']}** ({r['department']}) - {r['positions']} positions" for r in reqs])
+                return "⏳ **Awaiting Interview:**\n" + "\n".join([f"• {c.get('full_name', 'Unknown')} - {c.get('preferred_role', 'Unknown')} ({c.get('email', '')})" for c in cands])
+            
+            # --- NEW: PENDING CANDIDATE REQUESTS ---
+            elif "candidate" in msg_lower and "pending" in msg_lower:
+                # Find candidates with 'Pending' anywhere in their status
+                cands = await candidates_collection.find({"screening_status": {"$regex": "Pending", "$options": "i"}}).to_list(10)
+                if not cands: return "No candidates currently have a pending review status."
+                return "👀 **Candidates Pending HR Review:**\n" + "\n".join([f"• {c.get('full_name', 'Unknown')} - {c.get('preferred_role', 'Unknown')} ({c.get('email', '')})" for c in cands])
+            
+            # --- NEW: PENDING HIRING REQUESTS + UNFILLED JOBS (Sorted Newest to Oldest) ---
+            elif "pending" in msg_lower or "hiring request" in msg_lower:
+                # Sort by _id -1 to get newest first
+                reqs = await hiring_requests_collection.find({}).sort("_id", -1).to_list(10)
+                jobs = await job_openings_collection.find({}).sort("_id", -1).to_list(10)
+                
+                res = ""
+                if reqs:
+                    res += "📝 **Pending Hiring Requests (From Managers):**\n" + "\n".join([f"• **{r.get('role_required', 'Unknown')}** ({r.get('department', 'Unknown')}) - {r.get('positions', 1)} pos." for r in reqs]) + "\n\n"
+                else:
+                    res += "📝 **No pending hiring requests from managers.**\n\n"
+                    
+                if jobs:
+                    res += "🗂️ **Unfilled Job Openings (Newest First):**\n" + "\n".join([f"• **{j.get('title', 'Unknown')}** ({j.get('department', 'Unknown')}) - {j.get('location', 'Unknown')}" for j in jobs])
+                else:
+                    res += "🗂️ **No unfilled job openings found.**"
+                    
+                return res
+                
             else:
-                return "Please specify what you'd like to see: Shortlisted, Rejected, Awaiting Interview, or Pending Requests."
-
+                return "Please specify what you'd like to see: Shortlisted, Rejected, Awaiting Interview, Pending Candidates, or Pending Hiring Requests."
         elif intent == "hr_find_candidate":
             session["intent"] = "hr_find_candidate"
             session["step"] = "ask_identifier"
