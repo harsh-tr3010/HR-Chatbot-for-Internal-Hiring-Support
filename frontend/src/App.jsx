@@ -153,23 +153,45 @@ export default function App() {
     // FULL SCREEN OUTER WRAPPER
     <div className="relative flex flex-col h-screen w-full font-sans overflow-hidden bg-[#f8fafc] dark:bg-[#0f172a] transition-colors duration-300">
       
-      {/* VERIFICATION MODAL OVERLAY */}
+      {/* VERIFICATION MODAL OVERLAY (UNSKIPPABLE) */}
       {showAuthModal && (
         <div className="absolute inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4 transition-opacity duration-300">
           <div className="bg-white dark:bg-gray-900 p-8 rounded-3xl shadow-2xl max-w-sm w-full border border-gray-100 dark:border-gray-800 scale-100">
+            
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-extrabold text-gray-900 dark:text-white tracking-tight">Candidate Login</h2>
-              <button onClick={() => setShowAuthModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"><X size={22}/></button>
+              {/* FIX: Removed the 'X' close button to make it unskippable */}
             </div>
-            <p className="text-gray-500 dark:text-gray-400 mb-8 leading-relaxed">Restore previous chat history, or click Start Fresh to begin.</p>
+            
+            <p className="text-gray-500 dark:text-gray-400 mb-8 leading-relaxed">
+              Please enter your details to restore your previous chat history or start a new application.
+            </p>
             
             <form onSubmit={handleCandidateLogin} className="space-y-5 mb-8">
-              <input type="email" required value={authEmail} onChange={e=>setAuthEmail(e.target.value)} className="w-full border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none transition" placeholder="Email (john@example.com)" />
-              <input type="text" required value={authPhone} onChange={e=>setAuthPhone(e.target.value)} className="w-full border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none transition" placeholder="Phone Number (9876543210)" />
+              <input 
+                type="email" 
+                required 
+                value={authEmail} 
+                onChange={e=>setAuthEmail(e.target.value)} 
+                className="w-full border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none transition" 
+                placeholder="Email (john@example.com)" 
+              />
+              <input 
+                type="text" 
+                required 
+                value={authPhone} 
+                onChange={e=>setAuthPhone(e.target.value)} 
+                className="w-full border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none transition" 
+                placeholder="Phone Number (9876543210)" 
+              />
               <div className="flex gap-4 pt-3">
-                <button type="button" onClick={() => setShowAuthModal(false)} className="flex-1 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 py-3 rounded-xl font-semibold transition">Start Fresh</button>
-                <button type="submit" disabled={isVerifying} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-semibold transition disabled:opacity-70">
-                  {isVerifying ? 'Checking...' : 'Restore'}
+                {/* FIX: Removed the 'Start Fresh' bypass button */}
+                <button 
+                  type="submit" 
+                  disabled={isVerifying || !authEmail || !authPhone} 
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-semibold transition disabled:opacity-70 shadow-md"
+                >
+                  {isVerifying ? 'Checking...' : 'Continue'}
                 </button>
               </div>
             </form>
@@ -181,6 +203,7 @@ export default function App() {
                 <button onClick={() => switchRole('HR Admin')} className="text-xs font-semibold px-4 py-1.5 bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300 rounded-full hover:bg-green-100 dark:hover:bg-green-900 transition">HR Admin</button>
               </div>
             </div>
+            
           </div>
         </div>
       )}
