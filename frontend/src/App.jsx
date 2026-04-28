@@ -86,7 +86,8 @@ export default function App() {
     setIsLoading(true);
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
-      const res = await axios.post(`${apiUrl}/chat`, { session_id: sessionId, message: userMessage });
+      const res = await axios.post(`${apiUrl}/chat`, { session_id: sessionId, message: userMessage, user_role: currentRole });
+
       setMessages(prev => [...prev, { role: 'bot', text: res.data.response }]);
     } catch (error) { setMessages(prev => [...prev, { role: 'bot', text: 'Server error.' }]); } finally { setIsLoading(false); }
   };
@@ -109,7 +110,8 @@ export default function App() {
       
       const chatRes = await axios.post(`${apiUrl}/chat`, {
         session_id: sessionId,
-        message: uploadRes.data.file_url 
+        message: uploadRes.data.file_url,
+        user_role: currentRole
       });
 
       setMessages(prev => {

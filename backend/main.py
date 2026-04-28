@@ -12,6 +12,7 @@ import datetime
 import os
 import shutil
 from pydantic import BaseModel
+from typing import Optional
 
 app = FastAPI(title="HR Chatbot API", version="1.0.0")
 
@@ -29,6 +30,11 @@ class LoginRequest(BaseModel):
     email: str
     phone: str
 os.makedirs("uploads", exist_ok=True)
+
+class ChatRequest(BaseModel):
+    session_id: str
+    message: str
+    user_role: Optional[str] = "Candidate"
 
 @app.post("/candidate/login")
 async def candidate_login(request: LoginRequest):
@@ -80,25 +86,31 @@ async def upload_file(file: UploadFile = File(...)):
     # Return the simulated link/path
     return {"file_url": file_path, "filename": file.filename}
 
-@app.post("/chat", response_model=ChatResponse)
+@app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
+    import datetime
+    
+    # Save user message WITH the role
     await chat_history_collection.insert_one({
         "session_id": request.session_id,
         "role": "user",
+        "user_role": request.user_role,  # <--- Strict isolation
         "message": request.message,
         "timestamp": datetime.datetime.utcnow()
     })
-
+    
     bot_reply = await process_message(request.session_id, request.message)
-
+    
+    # Save bot reply WITH the role
     await chat_history_collection.insert_one({
         "session_id": request.session_id,
         "role": "bot",
+        "user_role": request.user_role,  # <--- Strict isolation
         "message": bot_reply,
         "timestamp": datetime.datetime.utcnow()
     })
-
-    return ChatResponse(response=bot_reply)
+    
+    return {"response": bot_reply}
 
 @app.get("/export/candidates")
 async def export_candidates():
