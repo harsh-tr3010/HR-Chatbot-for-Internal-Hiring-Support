@@ -105,10 +105,24 @@ async def evaluate_candidate(data: dict):
     else:
         status = "Not suitable based on location"
 
+    # --- FINAL DECISION MATRIX ---
+    if exp_match and skill_match and loc_match:
+        status = "Shortlisted for next step"
+    elif not exp_match:
+        status = "Not suitable based on required experience"
+    elif not skill_match:
+        status = "Missing required skills (minimum 2 needed)"
+    else:
+        status = "Not suitable based on location"
+
+    # NEW: Fetch the exact job title and location from the DB match
+    job_title = job.get('title', data.get('preferred_role', 'N/A'))
+    job_loc = job.get('location', 'N/A')
+
     summary = f"""
-    **Candidate Summary**
+    **Application Summary**
     • Name: {data.get('full_name', 'N/A')}
-    • Role Applied: {data.get('preferred_role', 'N/A')}
+    • Evaluated For: **{job_title}** (📍 {job_loc})
     • Experience: {cand_exp} years
     • Skills Matched: {len(matched_skills)}
     • Location Match: {'Yes' if loc_match else 'No'}
@@ -167,10 +181,31 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
         intent = get_intent(message)
         
         if intent == "view_jobs":
+            # --- 1. Extract City Target using LLM ---
+            city_prompt = f"Extract the city name from this text if the user is asking for jobs in a specific city. If they want all jobs, or no city is mentioned, return 'ALL'. Message: '{message}'. Output ONLY the city name or 'ALL'."
+            try:
+                city_comp = groq_client.chat.completions.create(
+                    model="llama-3.1-8b-instant",
+                    messages=[{"role": "user", "content": city_prompt}],
+                    temperature=0, max_tokens=10
+                )
+                city_target = city_comp.choices[0].message.content.strip().lower()
+            except:
+                city_target = "all"
+                
             jobs_cursor = job_openings_collection.find({})
-            all_jobs = await jobs_cursor.to_list(length=50)
-            if not all_jobs: return "There are currently no job openings."
+            all_jobs = await jobs_cursor.to_list(length=100)
             
+            # --- 2. Filter by City ---
+            if city_target != "all" and "all" not in city_target:
+                all_jobs = [j for j in all_jobs if city_target in j.get('location', '').lower()]
+                
+            if not all_jobs:
+                if city_target != "all" and "all" not in city_target:
+                    return f"There are currently no job openings in **{city_target.title()}**."
+                return "There are currently no job openings."
+            
+            # --- 3. HR ADMIN VIEW ---
             if user_role == "HR Admin":
                 res = "🗂️ **Active Job Requisitions (Internal DB)**\n\n"
                 for j in all_jobs:
@@ -180,14 +215,18 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                     res += "   ━━━━━━━━━━━━━━━━━━━━\n"
                 res += "\n💡 *Tip: You can ask me to generate a new job description for any of these roles.*"
                 return res
+                
+            # --- 4. CANDIDATE VIEW (Shows all details!) ---
             else:
-                display_jobs = random.sample(all_jobs, min(5, len(all_jobs)))
-                res = "Here are some of our **Top Open Roles** right now! 🌟\n\n"
-                for j in display_jobs:
+                res = f"Here are our **Open Roles**{' in ' + city_target.title() if city_target != 'all' and 'all' not in city_target else ''}! 🌟\n\n"
+                
+                # Loops through ALL filtered jobs instead of a random sample
+                for j in all_jobs:
+                    ctc = j.get('budget', j.get('ctc', 'Not disclosed'))
                     res += f"💼 **{j['title']}**\n"
-                    res += f"🏢 *{j['department']}* | 📍 {j['location']}\n"
-                    res += f"🎓 **Exp:** {j['experience_required']}+ years | ⏳ **Type:** {j.get('employment_type', 'Full-time')}\n"
-                    res += f"🛠️ **Skills:** {', '.join(j['skills_required'])}\n"
+                    res += f"🏢 *{j.get('department', 'General')}* | 📍 **{j.get('location', 'Any')}**\n"
+                    res += f"🎓 **Exp:** {j.get('experience_required', '0')}+ years | 💰 **CTC:** {ctc}\n"
+                    res += f"🛠️ **Skills:** {', '.join(j.get('skills_required', []))}\n"
                     res += f"📝 *{j.get('description', 'Join our amazing team!')}*\n"
                     res += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
                 res += "Ready? Reply with **'I want to apply for a job'** to start your application! 🚀"
