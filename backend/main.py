@@ -13,22 +13,23 @@ from bot_logic import process_message
 from database import candidates_collection, chat_history_collection, hiring_requests_collection, job_openings_collection
 
 app = FastAPI()
-@app.get("/")
-async def root():
-    return {"status": "HR Chatbot API is running", "version": "1.0.0"}
+
 origins = [
     "http://localhost:5173",
-    "https://hr-chatbot-for-internal-hiring-support-frontend-jpw90jcry.vercel.app"",
+    "https://hr-chatbot-for-internal-hiring-support-frontend-jpw90jcry.vercel.app",
 ]
-
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins, # Using the specific list instead of "*"
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/")
+async def root():
+    return {"status": "HR Chatbot API is running", "version": "1.0.0"}
 
 class ChatRequest(BaseModel):
     session_id: str
@@ -38,14 +39,13 @@ class ChatRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: str
     phone: str
-    role: str # <-- NEW: We now require the role
+    role: str
 
-# --- UPDATED: UNIVERSAL ROLE LOGIN ---
+# --- UNIVERSAL ROLE LOGIN ---
 @app.post("/login")
 async def universal_login(request: LoginRequest):
     email = request.email.strip()
     
-    # Check history specifically for their role and email
     past_sessions = await chat_history_collection.find({
         "role": "user", 
         "message": email,
@@ -56,52 +56,48 @@ async def universal_login(request: LoginRequest):
     last_session_id = None
     
     if past_sessions:
-        # Sort to find the most recent session
         past_sessions.sort(key=lambda x: x["timestamp"], reverse=True)
         last_session_id = past_sessions[0]["session_id"]
         
-        # Fetch all messages from that specific session
         chats = await chat_history_collection.find({"session_id": last_session_id}).sort("timestamp", 1).to_list(length=100)
         for c in chats:
             history.append({"role": c["role"], "text": c["message"]})
             
     return {"success": True, "session_id": last_session_id, "history": history}
 
-# --- NEW: REAL-TIME NOTIFICATION ENDPOINT ---
+# --- REAL-TIME NOTIFICATION ENDPOINT ---
 @app.get("/notifications")
 async def get_notifications(role: str, email: Optional[str] = None):
     notifications = []
     
     if role == "Candidate" and email:
-        # STRICT ISOLATION: Only fetches the logged-in student's data!
         apps = await candidates_collection.find({"email": email}).to_list(100)
-        for app in apps:
-            role_name = app.get("preferred_role", "Unknown Role")
-            status = app.get("screening_status", "Pending Review")
+        for app_data in apps:
+            role_name = app_data.get("preferred_role", "Unknown Role")
+            status = app_data.get("screening_status", "Pending Review")
             
-            # --- THE CANDIDATE EMAIL SUMMARY PATTERN ---
             email_summary = f"""
-            **📧 EMAIL NOTIFICATION**
-            ━━━━━━━━━━━━━━━━━━━━━━
-            **To:** {app.get('full_name')} ({email})
-            **From:** HR Team <hr-team@company.com>
-            **Subject:** Update on your application for {role_name}
-            
-            Dear {app.get('full_name')},
-            
-            We are writing to inform you that your application status for the **{role_name}** position has been updated.
-            
-            **Current Status:** {status}
-            
-            **Application Summary:**
-            • Location: {app.get('location', 'N/A')}
-            • Experience: {app.get('total_experience', 'N/A')} years
-            • Skills Matched: {app.get('skills', 'N/A')}
-            
-            Thank you for your interest in joining our team!
-            
-            Best Regards,
-            **HR Admin Team**
+**📧 EMAIL NOTIFICATION**
+━━━━━━━━━━━━━━━━━━━━━━
+**To:** {app_data.get('full_name')} ({email})
+**From:** HR Team <hr-team@company.com>
+**Subject:** Update on your application for {role_name}
+
+Dear {app_data.get('full_name')},
+
+We are writing to inform you that your application status for the **{role_name}** position has been updated.
+
+**Current Status:** {status}
+
+**Application Summary:**
+• Location: {app_data.get('location', 'N/A')}
+• Experience: {app_data.get('total_experience', 'N/A')} years
+• Skills Matched: {app_data.get('skills', 'N/A')}
+
+Thank you for your interest in joining our team!
+
+Best Regards,
+**HR Admin Team**
             """
             
             notifications.append({
@@ -110,7 +106,6 @@ async def get_notifications(role: str, email: Optional[str] = None):
             })
             
     elif role == "HR Admin":
-        # 1. Shortlisted Candidates Email Pattern
         shortlisted_cands = await candidates_collection.find({"screening_status": "Shortlisted for next step"}).to_list(100)
         if shortlisted_cands:
             details = "**📧 INTERNAL HR ALERTS**\n━━━━━━━━━━━━━━━━━━━━━━\n**To:** HR Admin Dashboard\n**Subject:** 🌟 Shortlisted Candidates Update\n\n"
@@ -118,7 +113,6 @@ async def get_notifications(role: str, email: Optional[str] = None):
                 details += f"• **{c.get('full_name')}** applied for **{c.get('preferred_role')}** (Exp: {c.get('total_experience')} yrs)\n"
             notifications.append({"text": f"🎉 {len(shortlisted_cands)} candidate(s) Shortlisted!", "details": details.strip()})
             
-        # 2. Pending Hiring Requests Email Pattern
         reqs = await hiring_requests_collection.find({}).to_list(100)
         if reqs:
             details = "**📧 INTERNAL HR ALERTS**\n━━━━━━━━━━━━━━━━━━━━━━\n**To:** HR Admin Dashboard\n**Subject:** 📝 Pending Manager Hiring Requests\n\n"
@@ -126,7 +120,6 @@ async def get_notifications(role: str, email: Optional[str] = None):
                 details += f"• **{r.get('department')} Dept** requested **{r.get('positions')} {r.get('role_required')}**(s) | Urgency: {r.get('urgency')}\n"
             notifications.append({"text": f"📝 {len(reqs)} new Hiring Request(s) pending.", "details": details.strip()})
             
-        # 3. Hired/Filled Vacancies Email Pattern
         hired_cands = await candidates_collection.find({"screening_status": {"$regex": "Hired", "$options": "i"}}).to_list(100)
         if hired_cands:
             details = "**📧 INTERNAL HR ALERTS**\n━━━━━━━━━━━━━━━━━━━━━━\n**To:** HR Admin Dashboard\n**Subject:** ✅ Successfully Filled Vacancies\n\n"
@@ -135,20 +128,18 @@ async def get_notifications(role: str, email: Optional[str] = None):
             notifications.append({"text": f"✅ {len(hired_cands)} job vacancy filled!", "details": details.strip()})
             
     return {"notifications": notifications}
+
 @app.get("/admin/dashboard")
 async def get_admin_dashboard():
-    # 1. Calculate Stats
     total_candidates = await candidates_collection.count_documents({})
     hired = await candidates_collection.count_documents({"screening_status": {"$regex": "Hired", "$options": "i"}})
     rejected = await candidates_collection.count_documents({"screening_status": {"$regex": "Reject|Not suitable|Missing", "$options": "i"}})
     pending = await candidates_collection.count_documents({"screening_status": {"$regex": "Pending|Awaiting", "$options": "i"}})
     
-    # 2. Fetch Data Arrays
     jobs = await job_openings_collection.find({}).sort("_id", -1).to_list(100)
     candidates = await candidates_collection.find({}).sort("_id", -1).to_list(100)
     requests = await hiring_requests_collection.find({}).sort("_id", -1).to_list(100)
     
-    # Helper to convert MongoDB ObjectId to string for JSON serialization
     def serialize(docs):
         for doc in docs:
             doc["_id"] = str(doc["_id"])
@@ -165,7 +156,7 @@ async def get_admin_dashboard():
         "candidates": serialize(candidates),
         "hiring_requests": serialize(requests)
     }
-# --- NEW: DASHBOARD ACTION ENDPOINTS ---
+
 @app.delete("/admin/jobs/{job_id}")
 async def delete_job(job_id: str):
     await job_openings_collection.delete_one({"_id": ObjectId(job_id)})
@@ -173,10 +164,8 @@ async def delete_job(job_id: str):
 
 @app.post("/admin/requests/{req_id}/approve")
 async def approve_request(req_id: str):
-    # 1. Find the pending request
     req = await hiring_requests_collection.find_one({"_id": ObjectId(req_id)})
     if req:
-        # 2. Format it into a Job Opening
         new_job = {
             "title": req.get("role_required"),
             "department": req.get("department"),
@@ -186,7 +175,6 @@ async def approve_request(req_id: str):
             "budget": req.get("budget", "Not specified"),
             "description": req.get("reason", "New opening approved by HR.")
         }
-        # 3. Insert into Jobs and Delete from Requests
         await job_openings_collection.insert_one(new_job)
         await hiring_requests_collection.delete_one({"_id": ObjectId(req_id)})
         return {"success": True}
@@ -216,14 +204,13 @@ async def chat_endpoint(request: ChatRequest):
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
+    # Note: On Vercel, this is temporary and will be cleared
     os.makedirs("uploads", exist_ok=True)
     file_path = f"uploads/{file.filename}"
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
     return {"file_url": file_path}
 
-
-# --- NEW: DYNAMIC CATEGORY-WISE EXPORT ENDPOINT ---
 @app.get("/export")
 async def export_data(type: str = "all_candidates"):
     output = io.StringIO()
@@ -250,12 +237,10 @@ async def export_data(type: str = "all_candidates"):
     output.seek(0)
     return StreamingResponse(output, media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=export_{type}.csv"})
 
-# --- FALLBACK: JUST IN CASE ---
 @app.get("/export/candidates")
 async def export_candidates_fallback():
     return await export_data(type="all_candidates")
 
-# --- DASHBOARD STATUS UPDATE ENDPOINT ---
 @app.put("/admin/candidates/{cand_id}/status")
 async def update_candidate_status(cand_id: str, status: str):
     await candidates_collection.update_one({"_id": ObjectId(cand_id)}, {"$set": {"screening_status": status}})
