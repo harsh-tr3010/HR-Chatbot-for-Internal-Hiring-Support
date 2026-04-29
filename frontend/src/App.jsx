@@ -33,11 +33,8 @@ export default function App() {
   const fileInputRef = useRef(null);
 
   // --- HELPER: Bulletproof URL Construction ---
-  const getApiUrl = (endpoint) => {
-    const base = (import.meta.env.VITE_API_URL || 'https://your-production-backend.vercel.app').replace(/\/$/, '');
-    const cleanEndpoint = endpoint.replace(/^\//, '');
-    return `${base}/${cleanEndpoint}`;
-  };
+  // Remove the import.meta.env line temporarily to prove the connection
+const API_BASE_URL = "https://hr-chatbot-for-internal-hiring-support-798n-fj7dh40u0.vercel.app";
 
   useEffect(() => {
     setSessionId(uuidv4());
