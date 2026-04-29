@@ -14,7 +14,7 @@ from database import candidates_collection, chat_history_collection, hiring_requ
 
 app = FastAPI()
 
-
+# --- CORS MIDDLEWARE ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -85,14 +85,7 @@ We are writing to inform you that your application status for the **{role_name}*
 
 **Current Status:** {status}
 
-**Application Summary:**
-• Location: {app_data.get('location', 'N/A')}
-• Experience: {app_data.get('total_experience', 'N/A')} years
-• Skills Matched: {app_data.get('skills', 'N/A')}
-
-Thank you for your interest in joining our team!
-
-Best Regards,
+Thank you for your interest!
 **HR Admin Team**
             """
             
@@ -104,103 +97,106 @@ Best Regards,
     elif role == "HR Admin":
         shortlisted_cands = await candidates_collection.find({"screening_status": "Shortlisted for next step"}).to_list(100)
         if shortlisted_cands:
-            details = "**📧 INTERNAL HR ALERTS**\n━━━━━━━━━━━━━━━━━━━━━━\n**To:** HR Admin Dashboard\n**Subject:** 🌟 Shortlisted Candidates Update\n\n"
-            for c in shortlisted_cands:
-                details += f"• **{c.get('full_name')}** applied for **{c.get('preferred_role')}** (Exp: {c.get('total_experience')} yrs)\n"
-            notifications.append({"text": f"🎉 {len(shortlisted_cands)} candidate(s) Shortlisted!", "details": details.strip()})
+            details = "🌟 Shortlisted candidates updated."
+            notifications.append({"text": f"🎉 {len(shortlisted_cands)} candidate(s) Shortlisted!", "details": details})
             
         reqs = await hiring_requests_collection.find({}).to_list(100)
         if reqs:
-            details = "**📧 INTERNAL HR ALERTS**\n━━━━━━━━━━━━━━━━━━━━━━\n**To:** HR Admin Dashboard\n**Subject:** 📝 Pending Manager Hiring Requests\n\n"
-            for r in reqs:
-                details += f"• **{r.get('department')} Dept** requested **{r.get('positions')} {r.get('role_required')}**(s) | Urgency: {r.get('urgency')}\n"
-            notifications.append({"text": f"📝 {len(reqs)} new Hiring Request(s) pending.", "details": details.strip()})
-            
-        hired_cands = await candidates_collection.find({"screening_status": {"$regex": "Hired", "$options": "i"}}).to_list(100)
-        if hired_cands:
-            details = "**📧 INTERNAL HR ALERTS**\n━━━━━━━━━━━━━━━━━━━━━━\n**To:** HR Admin Dashboard\n**Subject:** ✅ Successfully Filled Vacancies\n\n"
-            for c in hired_cands:
-                details += f"• **{c.get('full_name')}** was Hired for **{c.get('preferred_role')}**\n"
-            notifications.append({"text": f"✅ {len(hired_cands)} job vacancy filled!", "details": details.strip()})
+            notifications.append({"text": f"📝 {len(reqs)} new Hiring Request(s) pending.", "details": "Check dashboard for details."})
             
     return {"notifications": notifications}
 
+# --- ADMIN DASHBOARD ---
 @app.get("/admin/dashboard")
 async def get_admin_dashboard():
-    total_candidates = await candidates_collection.count_documents({})
-    hired = await candidates_collection.count_documents({"screening_status": {"$regex": "Hired", "$options": "i"}})
-    rejected = await candidates_collection.count_documents({"screening_status": {"$regex": "Reject|Not suitable|Missing", "$options": "i"}})
-    pending = await candidates_collection.count_documents({"screening_status": {"$regex": "Pending|Awaiting", "$options": "i"}})
-    
-    jobs = await job_openings_collection.find({}).sort("_id", -1).to_list(100)
-    candidates = await candidates_collection.find({}).sort("_id", -1).to_list(100)
-    requests = await hiring_requests_collection.find({}).sort("_id", -1).to_list(100)
-    
-    def serialize(docs):
-        for doc in docs:
-            doc["_id"] = str(doc["_id"])
-        return docs
+    try:
+        total_candidates = await candidates_collection.count_documents({})
+        hired = await candidates_collection.count_documents({"screening_status": {"$regex": "Hired", "$options": "i"}})
+        rejected = await candidates_collection.count_documents({"screening_status": {"$regex": "Reject|Not suitable|Missing", "$options": "i"}})
+        pending = await candidates_collection.count_documents({"screening_status": {"$regex": "Pending|Awaiting", "$options": "i"}})
+        
+        jobs = await job_openings_collection.find({}).sort("_id", -1).to_list(100)
+        candidates = await candidates_collection.find({}).sort("_id", -1).to_list(100)
+        requests = await hiring_requests_collection.find({}).sort("_id", -1).to_list(100)
+        
+        # Robust Serialize function
+        def serialize(docs):
+            if not docs:
+                return []
+            for doc in docs:
+                doc["_id"] = str(doc["_id"])
+            return docs
 
-    return {
-        "stats": {
-            "total": total_candidates, 
-            "hired": hired, 
-            "rejected": rejected, 
-            "pending": pending
-        },
-        "jobs": serialize(jobs),
-        "candidates": serialize(candidates),
-        "hiring_requests": serialize(requests)
-    }
+        return {
+            "stats": {
+                "total": total_candidates, 
+                "hired": hired, 
+                "rejected": rejected, 
+                "pending": pending
+            },
+            "jobs": serialize(jobs),
+            "candidates": serialize(candidates),
+            "requests": serialize(requests) # FIXED: Name must be 'requests' to match Frontend
+        }
+    except Exception as e:
+        return {"error": str(e)}, 500
 
 @app.delete("/admin/jobs/{job_id}")
 async def delete_job(job_id: str):
-    await job_openings_collection.delete_one({"_id": ObjectId(job_id)})
-    return {"success": True}
+    try:
+        await job_openings_collection.delete_one({"_id": ObjectId(job_id)})
+        return {"success": True}
+    except:
+        return {"success": False}, 500
 
 @app.post("/admin/requests/{req_id}/approve")
 async def approve_request(req_id: str):
-    req = await hiring_requests_collection.find_one({"_id": ObjectId(req_id)})
-    if req:
-        new_job = {
-            "title": req.get("role_required"),
-            "department": req.get("department"),
-            "location": req.get("job_location", "Any"),
-            "experience_required": req.get("required_experience", "0"),
-            "skills_required": [s.strip() for s in str(req.get("required_skills", "")).split(",")],
-            "budget": req.get("budget", "Not specified"),
-            "description": req.get("reason", "New opening approved by HR.")
-        }
-        await job_openings_collection.insert_one(new_job)
-        await hiring_requests_collection.delete_one({"_id": ObjectId(req_id)})
-        return {"success": True}
-    return {"success": False, "error": "Request not found"}
+    try:
+        req = await hiring_requests_collection.find_one({"_id": ObjectId(req_id)})
+        if req:
+            new_job = {
+                "title": req.get("role_required"),
+                "department": req.get("department"),
+                "location": req.get("job_location", "Any"),
+                "experience_required": req.get("required_experience", "0"),
+                "skills_required": [s.strip() for s in str(req.get("required_skills", "")).split(",")],
+                "budget": req.get("budget", "Not specified"),
+                "description": req.get("reason", "New opening approved by HR.")
+            }
+            await job_openings_collection.insert_one(new_job)
+            await hiring_requests_collection.delete_one({"_id": ObjectId(req_id)})
+            return {"success": True}
+        return {"success": False, "error": "Request not found"}
+    except:
+        return {"success": False}, 500
 
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
-    await chat_history_collection.insert_one({
-        "session_id": request.session_id,
-        "role": "user",
-        "user_role": request.user_role,
-        "message": request.message,
-        "timestamp": datetime.datetime.utcnow()
-    })
-    
-    bot_reply = await process_message(request.session_id, request.message, request.user_role)
-    
-    await chat_history_collection.insert_one({
-        "session_id": request.session_id,
-        "role": "bot",
-        "user_role": request.user_role,
-        "message": bot_reply,
-        "timestamp": datetime.datetime.utcnow()
-    })
-    
-    return {"response": bot_reply}
+    try:
+        await chat_history_collection.insert_one({
+            "session_id": request.session_id,
+            "role": "user",
+            "user_role": request.user_role,
+            "message": request.message,
+            "timestamp": datetime.datetime.utcnow()
+        })
+        
+        bot_reply = await process_message(request.session_id, request.message, request.user_role)
+        
+        await chat_history_collection.insert_one({
+            "session_id": request.session_id,
+            "role": "bot",
+            "user_role": request.user_role,
+            "message": bot_reply,
+            "timestamp": datetime.datetime.utcnow()
+        })
+        
+        return {"response": bot_reply}
+    except Exception as e:
+        return {"response": f"Chat Error: {str(e)}"}, 500
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
-    # Note: On Vercel, this is temporary and will be cleared
     os.makedirs("uploads", exist_ok=True)
     file_path = f"uploads/{file.filename}"
     with open(file_path, "wb") as buffer:
@@ -239,5 +235,8 @@ async def export_candidates_fallback():
 
 @app.put("/admin/candidates/{cand_id}/status")
 async def update_candidate_status(cand_id: str, status: str):
-    await candidates_collection.update_one({"_id": ObjectId(cand_id)}, {"$set": {"screening_status": status}})
-    return {"success": True}
+    try:
+        await candidates_collection.update_one({"_id": ObjectId(cand_id)}, {"$set": {"screening_status": status}})
+        return {"success": True}
+    except:
+        return {"success": False}, 500
