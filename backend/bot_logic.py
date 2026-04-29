@@ -23,21 +23,24 @@ async def send_hr_email_notification(candidate_name, role, current_status):
     print(f"Body: A new candidate has applied. Screening status: {current_status}. Please check the admin dashboard.")
     print("="*50 + "\n")
 
-def get_intent(user_message: str) -> str:
+# --- AI INTENT ROUTER ---
+def get_intent(user_message: str, user_role: str) -> str:
     prompt = f"""
-    Classify the following user message into EXACTLY ONE of these intents:
-    - apply_job (User wants to apply for a job)
+    You are classifying intents for a user who is currently logged in as: **{user_role}**.
+    Classify their message into EXACTLY ONE of these intents:
+    - apply_job (Candidate wants to apply for a job. HR Admins NEVER do this.)
     - view_jobs (User wants to see open positions)
     - raise_hiring_request (Hiring manager requesting new hire)
-    - check_status (User wants to check their job application status)
-    - hr_admin_queries (HR asking to show shortlisted, rejected, awaiting interview, or pending requests)
-    - hr_find_candidate (HR asking to show candidate details or summary by email/phone)
-    - hr_update_status (HR asking to change, update, or manage a candidate's status)
-    - hr_generate_jd (HR asking to generate a job description)
+    - check_status (Candidate wants to check their own status)
+    - hr_admin_queries (HR Admin asking to show ALL candidates, show shortlisted, rejected, awaiting interview, or pending requests)
+    - hr_find_candidate (HR Admin asking to show candidate details or summary by email/phone)
+    - hr_update_status (HR Admin asking to change, update, or manage a candidate's status)
+    - hr_generate_jd (HR Admin asking to generate a job description)
+    - hr_manage_jobs (HR Admin asking to approve a hiring request, or delete/remove a job opening)
     - general_faq (Asking about hiring process, documents required, response time)
     
     Message: "{user_message}"
-    Output ONLY the intent name.
+    Output ONLY the exact intent name. Do not add any other words.
     """
     completion = groq_client.chat.completions.create(
         model="llama-3.1-8b-instant",
@@ -60,12 +63,12 @@ def is_numeric(val):
     except ValueError:
         return False
 
+# --- CANDIDATE EVALUATION MATRIX ---
 async def evaluate_candidate(data: dict):
     job = await job_openings_collection.find_one({"title": {"$regex": data.get('preferred_role', ''), "$options": "i"}})
     if not job:
         return "Role not found in active database, but profile saved.", "Pending Review"
 
-    # 1. EXPERIENCE CHECK 
     job_exp_str = str(job.get("experience_required", "0"))
     nums = re.findall(r'\d+\.?\d*', job_exp_str)
     req_exp_min = float(nums[0]) if nums else 0.0
@@ -77,10 +80,8 @@ async def evaluate_candidate(data: dict):
 
     exp_match = (req_exp_min <= cand_exp <= req_exp_max) or (len(nums) == 1 and cand_exp >= req_exp_min)
 
-    # 2. SKILL CHECK (Requires at least 2 matching skills)
     req_skills = [s.lower() for s in job.get("skills_required", [])]
     
-    # --- FIX: Handle both Lists (from AI) and Strings (from manual entry) ---
     raw_skills = data.get("skills", "")
     if isinstance(raw_skills, list):
         cand_skills = [str(s).strip().lower() for s in raw_skills]
@@ -90,12 +91,10 @@ async def evaluate_candidate(data: dict):
     matched_skills = [s for s in cand_skills if any(req in s or s in req for req in req_skills)]
     skill_match = len(matched_skills) >= 2
 
-    # 3. LOCATION CHECK
     job_loc = job.get("location", "").lower()
     cand_loc = data.get("location", "").lower()
     loc_match = (job_loc in cand_loc) or (cand_loc in job_loc) or ('remote' in job_loc) or ('any' in job_loc)
 
-    # --- FINAL DECISION MATRIX ---
     if exp_match and skill_match and loc_match:
         status = "Shortlisted for next step"
     elif not exp_match:
@@ -105,24 +104,13 @@ async def evaluate_candidate(data: dict):
     else:
         status = "Not suitable based on location"
 
-    # --- FINAL DECISION MATRIX ---
-    if exp_match and skill_match and loc_match:
-        status = "Shortlisted for next step"
-    elif not exp_match:
-        status = "Not suitable based on required experience"
-    elif not skill_match:
-        status = "Missing required skills (minimum 2 needed)"
-    else:
-        status = "Not suitable based on location"
-
-    # NEW: Fetch the exact job title and location from the DB match
     job_title = job.get('title', data.get('preferred_role', 'N/A'))
-    job_loc = job.get('location', 'N/A')
+    job_loc_final = job.get('location', 'N/A')
 
     summary = f"""
     **Application Summary**
     • Name: {data.get('full_name', 'N/A')}
-    • Evaluated For: **{job_title}** (📍 {job_loc})
+    • Evaluated For: **{job_title}** (📍 {job_loc_final})
     • Experience: {cand_exp} years
     • Skills Matched: {len(matched_skills)}
     • Location Match: {'Yes' if loc_match else 'No'}
@@ -136,30 +124,19 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
     
     session = sessions[session_id]
 
-    # =====================================================================
-    # --- NEW FEATURE 1: GLOBAL CANCEL COMMAND ---
-    # =====================================================================
     if message.lower().strip() in ["cancel", "stop", "exit", "start over", "quit", "abort"]:
         sessions[session_id] = {"intent": None, "step": None, "data": {}}
         return "🚫 **Process Cancelled.**\n\nI have cleared your current progress. What would you like to do instead?"
 
-    # =====================================================================
-    # --- NEW FEATURE 2: SMART MID-CONVERSATION INTERRUPTION HANDLING ---
-    # =====================================================================
     if session["intent"] and not message.startswith("uploads/"):
-        # Use LLM to classify if the user is answering the form, or asking a question
         check_prompt = f"Context: User is currently filling out a form field named '{session['step']}'.\nUser Message: '{message}'\nTask: Is the user providing an answer for the field, or are they asking a separate question/interrupting? Reply STRICTLY with 'ANSWER' or 'QUESTION'."
-        
         try:
             comp = groq_client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[{"role": "user", "content": check_prompt}],
-                temperature=0,
-                max_tokens=10
+                temperature=0, max_tokens=10
             )
-            
             if "QUESTION" in comp.choices[0].message.content.upper():
-                # It's an interruption! Answer their question using Llama 3
                 ans_comp = groq_client.chat.completions.create(
                     model="llama-3.1-8b-instant",
                     messages=[
@@ -168,20 +145,16 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                     ]
                 )
                 bot_answer = ans_comp.choices[0].message.content
-                
-                # Format the internal step name to look beautiful (e.g., 'ask_current_ctc' -> 'Current Ctc')
                 step_friendly_name = session['step'].replace('ask_', '').replace('_', ' ').title()
-                
                 return f"💡 {bot_answer}\n\n━━━━━━━━━━━━━━━━━━━━\n⏳ **Now, let's get back to what we were doing!**\nPlease provide your: **{step_friendly_name}**"
         except Exception as e:
             print(f"Interruption check skipped: {e}")
 
-    # --- 1. DETERMINE INTENT (If brand new conversation) ---
+    # --- 1. DETERMINE INTENT ---
     if not session["intent"]:
-        intent = get_intent(message)
+        intent = get_intent(message, user_role)
         
         if intent == "view_jobs":
-            # --- 1. Extract City Target using LLM ---
             city_prompt = f"Extract the city name from this text if the user is asking for jobs in a specific city. If they want all jobs, or no city is mentioned, return 'ALL'. Message: '{message}'. Output ONLY the city name or 'ALL'."
             try:
                 city_comp = groq_client.chat.completions.create(
@@ -196,7 +169,6 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             jobs_cursor = job_openings_collection.find({})
             all_jobs = await jobs_cursor.to_list(length=100)
             
-            # --- 2. Filter by City ---
             if city_target != "all" and "all" not in city_target:
                 all_jobs = [j for j in all_jobs if city_target in j.get('location', '').lower()]
                 
@@ -205,7 +177,6 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                     return f"There are currently no job openings in **{city_target.title()}**."
                 return "There are currently no job openings."
             
-            # --- 3. HR ADMIN VIEW ---
             if user_role == "HR Admin":
                 res = "🗂️ **Active Job Requisitions (Internal DB)**\n\n"
                 for j in all_jobs:
@@ -215,12 +186,8 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                     res += "   ━━━━━━━━━━━━━━━━━━━━\n"
                 res += "\n💡 *Tip: You can ask me to generate a new job description for any of these roles.*"
                 return res
-                
-            # --- 4. CANDIDATE VIEW (Shows all details!) ---
             else:
                 res = f"Here are our **Open Roles**{' in ' + city_target.title() if city_target != 'all' and 'all' not in city_target else ''}! 🌟\n\n"
-                
-                # Loops through ALL filtered jobs instead of a random sample
                 for j in all_jobs:
                     ctc = j.get('budget', j.get('ctc', 'Not disclosed'))
                     res += f"💼 **{j['title']}**\n"
@@ -280,8 +247,14 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                     res += "🗂️ **Unfilled Job Openings (Newest First):**\n" + "\n".join([f"• **{j.get('title', 'Unknown')}** ({j.get('department', 'Unknown')}) - {j.get('location', 'Unknown')}" for j in jobs])
                 else: res += "🗂️ **No unfilled job openings found.**"
                 return res
+                
+            elif "all" in msg_lower or "every" in msg_lower or "list" in msg_lower:
+                cands = await candidates_collection.find({}).sort("_id", -1).to_list(50)
+                if not cands: return "No candidates found in the database."
+                return "📋 **Master Candidate Database (Newest First):**\n" + "\n".join([f"• {c.get('full_name', 'Unknown')} - {c.get('preferred_role', 'Unknown')} ({c.get('email', '')}) | Status: *{c.get('screening_status', 'Pending')}*" for c in cands])
+                
             else:
-                return "Please specify what you'd like to see: Shortlisted, Rejected, Awaiting Interview, Pending Candidates, or Pending Hiring Requests."
+                return "Please specify what you'd like to see: All Candidates, Shortlisted, Rejected, Awaiting Interview, Pending Candidates, or Pending Hiring Requests."
 
         elif intent == "hr_find_candidate":
             session["intent"] = "hr_find_candidate"
@@ -298,8 +271,60 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             session["step"] = "ask_role"
             return "I can help you generate a Job Description. What is the **Job Title**?"
 
+        # --- NEW: HR MANAGE JOBS INTENT ---
+        elif intent == "hr_manage_jobs":
+            step = session["step"]
+            if not step:
+                session["step"] = "ask_manage_action"
+                return "I can help you manage the database. Do you want to **Approve a Hiring Request** or **Delete a Job Opening**?"
+            elif step == "ask_manage_action":
+                if "approve" in message.lower() or "request" in message.lower():
+                    session["data"]["manage_action"] = "approve"
+                    session["step"] = "ask_manage_role"
+                    return "Which **Role Name** from the pending hiring requests do you want to approve?"
+                elif "delete" in message.lower() or "remove" in message.lower() or "job" in message.lower():
+                    session["data"]["manage_action"] = "delete"
+                    session["step"] = "ask_manage_role"
+                    return "Which **Job Title** do you want to remove from the active job openings?"
+                else:
+                    return "Please specify if you want to 'Approve' a request or 'Delete' a job."
+            elif step == "ask_manage_role":
+                action = session["data"]["manage_action"]
+                target_role = message
+                
+                if action == "approve":
+                    req = await hiring_requests_collection.find_one({"role_required": {"$regex": target_role, "$options": "i"}})
+                    if req:
+                        new_job = {
+                            "title": req.get("role_required"),
+                            "department": req.get("department"),
+                            "location": req.get("job_location", "Any"),
+                            "experience_required": req.get("required_experience", "0"),
+                            "skills_required": [s.strip() for s in str(req.get("required_skills", "")).split(",")],
+                            "budget": req.get("budget", "Not specified"),
+                            "description": req.get("reason", "Approved by HR.")
+                        }
+                        await job_openings_collection.insert_one(new_job)
+                        await hiring_requests_collection.delete_one({"_id": req["_id"]})
+                        sessions[session_id] = {"intent": None, "step": None, "data": {}}
+                        return f"✅ Success! The hiring request for **{req.get('role_required')}** has been approved and turned into an active Job Opening."
+                    else:
+                        sessions[session_id] = {"intent": None, "step": None, "data": {}}
+                        return f"❌ I couldn't find a pending hiring request for '{target_role}'."
+                        
+                elif action == "delete":
+                    job = await job_openings_collection.find_one({"title": {"$regex": target_role, "$options": "i"}})
+                    if job:
+                        await job_openings_collection.delete_one({"_id": job["_id"]})
+                        sessions[session_id] = {"intent": None, "step": None, "data": {}}
+                        return f"🗑️ Success! The job opening for **{job.get('title')}** has been removed from the database."
+                    else:
+                        sessions[session_id] = {"intent": None, "step": None, "data": {}}
+                        return f"❌ I couldn't find an active job opening for '{target_role}'."
+
+        # --- FALLBACK RESPONSE ---
         else: 
-            sys_prompt = "You are an internal HR Assistant. Answer questions about the hiring process, documents required (ID, Resume, Certificates), or expected response time (usually 3-5 business days). Keep it brief and professional."
+            sys_prompt = f"You are an internal HR Assistant. The user asking is logged in as a **{user_role}**. If they are a Candidate, answer FAQs about applying. If they are an HR Admin or Hiring Manager, provide professional internal support and never offer to help them apply for a job. Keep it brief."
             comp = groq_client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[{"role": "system", "content": sys_prompt}, {"role": "user", "content": message}]
@@ -321,7 +346,6 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                         reader = PyPDF2.PdfReader(f)
                         text = "".join([page.extract_text() for page in reader.pages if page.extract_text()])
                     
-                    # FIX: Removed 'location' from the prompt so we can ask for it manually
                     sys_prompt = """You are an expert HR resume parser. Extract the following details from the text and return ONLY a valid JSON object.
                     Required keys: 'full_name', 'email', 'phone', 'skills', 'experiences' (list of objects with 'start' and 'end' keys strictly in 'YYYY-MM' format. If currently working there, set 'end' to 'Present')."""
                     
@@ -358,8 +382,6 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                     session["data"].update(parsed_data)
                     session["data"]["total_experience"] = str(calculated_years)
                     session["data"]["resume_link"] = message
-                    
-                    # FIX: Send the user to the new location step!
                     session["step"] = "ask_parsed_location"
                     
                     return f"✅ **Resume Parsed Successfully!**\n\n👤 Name: {session['data'].get('full_name')}\n📧 Email: {session['data'].get('email')}\n🎓 Exp: **{calculated_years} yrs**\n🛠️ Skills: {session['data'].get('skills')}\n\n📍 To ensure we match you with the right office, what is your **Current or Preferred Location**?"
@@ -371,7 +393,6 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                 session["step"] = "ask_name"
                 return "No problem! Let's do it manually. Please share your **Full Name**."
 
-        # --- NEW STEP: Ask for location after the resume is parsed ---
         elif step == "ask_parsed_location":
             session["data"]["location"] = message
             session["step"] = "ask_current_ctc"
@@ -413,7 +434,6 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             session["data"]["skills"] = message
             session["step"] = "ask_current_ctc"
             return "What is your current CTC? (Enter a number)"
-        
         elif step == "ask_current_ctc":
             if not is_numeric(message.replace(',','')): return "CTC must be numeric."
             session["data"]["current_ctc"] = message
@@ -628,5 +648,53 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             )
             sessions[session_id] = {"intent": None, "step": None, "data": {}}
             return f"🔄 Success! The status for **{target_email}** has been updated to **{new_status}**."
+
+    # --- 8. HR MANAGE JOBS LOGIC FLOW ---
+    if session["intent"] == "hr_manage_jobs":
+        step = session["step"]
+        if step == "ask_manage_action":
+            if "approve" in message.lower() or "request" in message.lower():
+                session["data"]["manage_action"] = "approve"
+                session["step"] = "ask_manage_role"
+                return "Which **Role Name** from the pending hiring requests do you want to approve?"
+            elif "delete" in message.lower() or "remove" in message.lower() or "job" in message.lower():
+                session["data"]["manage_action"] = "delete"
+                session["step"] = "ask_manage_role"
+                return "Which **Job Title** do you want to remove from the active job openings?"
+            else:
+                return "Please specify if you want to 'Approve' a request or 'Delete' a job."
+        elif step == "ask_manage_role":
+            action = session["data"]["manage_action"]
+            target_role = message
+            
+            if action == "approve":
+                req = await hiring_requests_collection.find_one({"role_required": {"$regex": target_role, "$options": "i"}})
+                if req:
+                    new_job = {
+                        "title": req.get("role_required"),
+                        "department": req.get("department"),
+                        "location": req.get("job_location", "Any"),
+                        "experience_required": req.get("required_experience", "0"),
+                        "skills_required": [s.strip() for s in str(req.get("required_skills", "")).split(",")],
+                        "budget": req.get("budget", "Not specified"),
+                        "description": req.get("reason", "Approved by HR.")
+                    }
+                    await job_openings_collection.insert_one(new_job)
+                    await hiring_requests_collection.delete_one({"_id": req["_id"]})
+                    sessions[session_id] = {"intent": None, "step": None, "data": {}}
+                    return f"✅ Success! The hiring request for **{req.get('role_required')}** has been approved and turned into an active Job Opening."
+                else:
+                    sessions[session_id] = {"intent": None, "step": None, "data": {}}
+                    return f"❌ I couldn't find a pending hiring request for '{target_role}'."
+                    
+            elif action == "delete":
+                job = await job_openings_collection.find_one({"title": {"$regex": target_role, "$options": "i"}})
+                if job:
+                    await job_openings_collection.delete_one({"_id": job["_id"]})
+                    sessions[session_id] = {"intent": None, "step": None, "data": {}}
+                    return f"🗑️ Success! The job opening for **{job.get('title')}** has been removed from the database."
+                else:
+                    sessions[session_id] = {"intent": None, "step": None, "data": {}}
+                    return f"❌ I couldn't find an active job opening for '{target_role}'."
 
     return "I didn't quite understand. You can ask to view jobs, apply for a job, raise a hiring request, or check shortlisted candidates."
