@@ -119,13 +119,69 @@ async def evaluate_candidate(data: dict):
     return summary, status
 
 async def process_message(session_id: str, message: str, user_role: str = "Candidate") -> str:
+    message_lower = message.lower().strip()
+
+    # ==========================================
+    # --- NEW: DIRECT DATABASE INTERCEPTORS ---
+    # ==========================================
+    
+    # 1. View Job Openings (with City Filter)
+    if "job opening" in message_lower or "vacancies" in message_lower or "view jobs" in message_lower:
+        query = {}
+        common_cities = ["noida", "gurgaon", "bangalore", "pune", "hyderabad", "delhi", "mumbai", "remote"]
+        for city in common_cities:
+            if city in message_lower:
+                query["location"] = {"$regex": city, "$options": "i"} 
+                break
+                
+        jobs = await job_openings_collection.find(query).to_list(50)
+        
+        if not jobs:
+            return "Currently, there are no job openings matching your criteria. Please check back later!"
+            
+        reply = "**Here are the current Job Openings:**\n\n"
+        for j in jobs:
+            skills = j.get('skills_required', [])
+            skills_str = ", ".join(skills) if isinstance(skills, list) else str(skills)
+            
+            reply += f"🔹 **{j.get('title')}** ({j.get('department')} Dept)\n"
+            reply += f"   • **Location:** {j.get('location', 'Not specified')}\n"
+            reply += f"   • **Experience:** {j.get('experience_required', '0')} yrs\n"
+            reply += f"   • **Skills:** {skills_str}\n\n"
+        return reply
+
+    # 2. View Pending Hiring Requests (HR Admin Only)
+    if "pending hiring request" in message_lower or "show hiring requests" in message_lower:
+        if user_role != "HR Admin":
+            return "⚠️ You do not have permission to view pending hiring requests."
+            
+        reqs = await hiring_requests_collection.find({}).to_list(50)
+        
+        if not reqs:
+            return "✅ There are no pending hiring requests at the moment."
+            
+        reply = "**📝 Pending Hiring Requests:**\n\n"
+        for r in reqs:
+            skills = r.get('required_skills', [])
+            skills_str = ", ".join(skills) if isinstance(skills, list) else str(skills)
+            
+            reply += f"🔹 **{r.get('role_required')}** (Requested by {r.get('department')} Dept)\n"
+            reply += f"   • **Positions:** {r.get('positions')} | **Urgency:** {r.get('urgency')}\n"
+            reply += f"   • **Location:** {r.get('job_location', 'N/A')} | **Exp:** {r.get('required_experience', '0')} yrs\n"
+            reply += f"   • **Skills:** {skills_str}\n\n"
+        return reply
+
+    # ==========================================
+    # --- EXISTING SESSION & CHAT LOGIC ---
+    # ==========================================
+
     if session_id not in sessions:
         sessions[session_id] = {"intent": None, "step": None, "data": {}}
     
     session = sessions[session_id]
 
     # 1. Check for Cancel/Stop
-    if message.lower().strip() in ["cancel", "stop", "exit", "quit", "abort"]:
+    if message_lower in ["cancel", "stop", "exit", "quit", "abort"]:
         sessions[session_id] = {"intent": None, "step": None, "data": {}}
         return "🚫 **Process Cancelled.**\n\nI have cleared your current progress. What would you like to do instead?"
 
@@ -134,7 +190,7 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
         "start over", "scrap this chat", "lets start", "let's start", 
         "restart", "start again", "clear chat", "scrap chat"
     ]
-    if message.lower().strip() in reset_phrases:
+    if message_lower in reset_phrases:
         sessions[session_id] = {"intent": None, "step": None, "data": {}}
         return "🔄 **Chat Reset!**\n\nWhat do you wanna ask?"
 
@@ -166,14 +222,12 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
         intent = get_intent(message, user_role)
         
         if intent == "view_jobs":
-            msg_lower = message.lower().strip()
-            
-            # --- Explicit Bypass for Quick Replies & "All Jobs" ---
+            # Note: This logic might be bypassed by the new interceptor above, 
+            # but we keep it just in case the LLM specifically routes here.
             explicit_all_phrases = ["view job openings", "show all jobs", "all jobs", "show me all jobs", "list jobs", "show all"]
-            if msg_lower in explicit_all_phrases:
+            if message_lower in explicit_all_phrases:
                 city_target = "all"
             else:
-                # Use AI to extract city ONLY if they typed a custom sentence
                 city_prompt = f"Extract the city name from this text if the user is asking for jobs in a specific city. If they want all jobs, or no city is mentioned, return 'ALL'. Message: '{message}'. Output ONLY the city name or 'ALL'."
                 try:
                     city_comp = groq_client.chat.completions.create(
@@ -188,7 +242,6 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             jobs_cursor = job_openings_collection.find({})
             all_jobs = await jobs_cursor.to_list(length=100)
             
-            # Filter by City if a specific one was requested
             if city_target != "all" and "all" not in city_target:
                 all_jobs = [j for j in all_jobs if city_target in j.get('location', '').lower()]
                 
@@ -197,7 +250,6 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                     return f"There are currently no job openings in **{city_target.title()}**."
                 return "There are currently no job openings."
             
-            # HR Admin View
             if user_role == "HR Admin":
                 res = "🗂️ **Active Job Requisitions (Internal DB)**\n\n"
                 for j in all_jobs:
@@ -206,14 +258,13 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                         ctc = f"{ctc} per annum"
 
                     res += f"🔹 **{j['title']}** ({j['department']})\n"
-                    res += f"   📍 Loc: {j['location']} | 🎓 Exp: {j['experience_required']}\n"
+                    res += f"   📍 Loc: {j['location']} | 🎓 Exp: {j['experience_required']} yrs\n"
                     res += f"   💰 Budget: {ctc}\n"
                     res += f"   🛠️ Skills Req: {', '.join(j['skills_required'])}\n"
                     res += "   ━━━━━━━━━━━━━━━━━━━━\n"
                 res += "\n💡 *Tip: You can ask me to generate a new job description for any of these roles.*"
                 return res
             
-            # Candidate View
             else:
                 res = f"Here are our **Open Roles**{' in ' + city_target.title() if city_target != 'all' and 'all' not in city_target else ''}! 🌟\n\n"
                 for j in all_jobs:
@@ -229,6 +280,7 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                     res += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
                 res += "Ready? Reply with **'I want to apply for a job'** to start your application! 🚀"
                 return res
+                
         elif intent == "apply_job":
             session["intent"] = "apply_job"
             session["step"] = "ask_role"
@@ -245,28 +297,27 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             return "I can help you check your application status! 📋 Please enter your registered **Email ID**."
 
         elif intent == "hr_admin_queries":
-            msg_lower = message.lower()
-            if "shortlisted" in msg_lower:
+            if "shortlisted" in message_lower:
                 cands = await candidates_collection.find({"screening_status": "Shortlisted for next step"}).to_list(10)
                 if not cands: return "No shortlisted candidates found."
                 return "✅ **Shortlisted Candidates:**\n" + "\n".join([f"• {c.get('full_name', 'Unknown')} - {c.get('preferred_role', 'Unknown')} ({c.get('email', '')})" for c in cands])
             
-            elif "rejected" in msg_lower or "not suitable" in msg_lower:
+            elif "rejected" in message_lower or "not suitable" in message_lower:
                 cands = await candidates_collection.find({"screening_status": {"$regex": "Not suitable|Missing|Reject", "$options": "i"}}).to_list(10)
                 if not cands: return "No rejected candidates found."
                 return "❌ **Rejected Candidates:**\n" + "\n".join([f"• {c.get('full_name', 'Unknown')} - {c.get('preferred_role', 'Unknown')} ({c.get('email', '')}) | Status: *{c.get('screening_status', 'Unknown')}*" for c in cands])
             
-            elif "awaiting" in msg_lower or "interview" in msg_lower:
+            elif "awaiting" in message_lower or "interview" in message_lower:
                 cands = await candidates_collection.find({"screening_status": {"$regex": "interview|Awaiting", "$options": "i"}}).to_list(10)
                 if not cands: return "No candidates currently awaiting an interview."
                 return "⏳ **Awaiting Interview:**\n" + "\n".join([f"• {c.get('full_name', 'Unknown')} - {c.get('preferred_role', 'Unknown')} ({c.get('email', '')})" for c in cands])
             
-            elif "candidate" in msg_lower and "pending" in msg_lower:
+            elif "candidate" in message_lower and "pending" in message_lower:
                 cands = await candidates_collection.find({"screening_status": {"$regex": "Pending", "$options": "i"}}).to_list(10)
                 if not cands: return "No candidates currently have a pending review status."
                 return "👀 **Candidates Pending HR Review:**\n" + "\n".join([f"• {c.get('full_name', 'Unknown')} - {c.get('preferred_role', 'Unknown')} ({c.get('email', '')})" for c in cands])
             
-            elif "pending" in msg_lower or "hiring request" in msg_lower:
+            elif "pending" in message_lower or "hiring request" in message_lower:
                 reqs = await hiring_requests_collection.find({}).sort("_id", -1).to_list(10)
                 jobs = await job_openings_collection.find({}).sort("_id", -1).to_list(10)
                 res = ""
@@ -278,7 +329,7 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                 else: res += "🗂️ **No unfilled job openings found.**"
                 return res
                 
-            elif "all" in msg_lower or "every" in msg_lower or "list" in msg_lower:
+            elif "all" in message_lower or "every" in message_lower or "list" in message_lower:
                 cands = await candidates_collection.find({}).sort("_id", -1).to_list(50)
                 if not cands: return "No candidates found in the database."
                 return "📋 **Master Candidate Database (Newest First):**\n" + "\n".join([f"• {c.get('full_name', 'Unknown')} - {c.get('preferred_role', 'Unknown')} ({c.get('email', '')}) | Status: *{c.get('screening_status', 'Pending')}*" for c in cands])
@@ -301,18 +352,17 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             session["step"] = "ask_role"
             return "I can help you generate a Job Description. What is the **Job Title**?"
 
-        # --- NEW: HR MANAGE JOBS INTENT ---
         elif intent == "hr_manage_jobs":
             step = session["step"]
             if not step:
                 session["step"] = "ask_manage_action"
                 return "I can help you manage the database. Do you want to **Approve a Hiring Request** or **Delete a Job Opening**?"
             elif step == "ask_manage_action":
-                if "approve" in message.lower() or "request" in message.lower():
+                if "approve" in message_lower or "request" in message_lower:
                     session["data"]["manage_action"] = "approve"
                     session["step"] = "ask_manage_role"
                     return "Which **Role Name** from the pending hiring requests do you want to approve?"
-                elif "delete" in message.lower() or "remove" in message.lower() or "job" in message.lower():
+                elif "delete" in message_lower or "remove" in message_lower or "job" in message_lower:
                     session["data"]["manage_action"] = "delete"
                     session["step"] = "ask_manage_role"
                     return "Which **Job Title** do you want to remove from the active job openings?"
@@ -519,7 +569,6 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             return "What is the required experience range? (e.g., '0-2', '3-5', or 'fresher')"
             
         elif step == "ask_exp":
-            # --- STRICT LLM Experience Range Formatter ---
             exp_prompt = f"Convert the following experience requirement into a strict range format: 'X-Y yrs'. Convert words to numbers. If only a minimum is provided (e.g., '4+'), output '4-99 yrs'. If it implies fresher (e.g., '0' or 'fresher'), output '0-1 yrs'. NEVER output the word 'years' or '+ years'. Input: '{message}'. Output ONLY the exact range string (e.g., '0-2 yrs')."
             try:
                 comp = groq_client.chat.completions.create(
@@ -543,7 +592,6 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
         elif step == "ask_location":
             session["data"]["job_location"] = message
             session["step"] = "ask_budget"
-            # --- NEW: Explicitly ask for per annum ---
             return "What is the budget range for this role? (Please specify as per annum, e.g., '10-15 LPA' or '12 Lakhs per annum')"
         elif step == "ask_budget":
             session["data"]["budget"] = message
@@ -698,12 +746,15 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
     # --- 8. HR MANAGE JOBS LOGIC FLOW ---
     if session["intent"] == "hr_manage_jobs":
         step = session["step"]
-        if step == "ask_manage_action":
-            if "approve" in message.lower() or "request" in message.lower():
+        if not step:
+            session["step"] = "ask_manage_action"
+            return "I can help you manage the database. Do you want to **Approve a Hiring Request** or **Delete a Job Opening**?"
+        elif step == "ask_manage_action":
+            if "approve" in message_lower or "request" in message_lower:
                 session["data"]["manage_action"] = "approve"
                 session["step"] = "ask_manage_role"
                 return "Which **Role Name** from the pending hiring requests do you want to approve?"
-            elif "delete" in message.lower() or "remove" in message.lower() or "job" in message.lower():
+            elif "delete" in message_lower or "remove" in message_lower or "job" in message_lower:
                 session["data"]["manage_action"] = "delete"
                 session["step"] = "ask_manage_role"
                 return "Which **Job Title** do you want to remove from the active job openings?"
