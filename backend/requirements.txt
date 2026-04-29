@@ -3,6 +3,9 @@ uvicorn
 gunicorn
 motor
 pydantic
+pydantic[email]
 groq
 python-dotenv
 email-validator
+PyPDF2
+python-multipart

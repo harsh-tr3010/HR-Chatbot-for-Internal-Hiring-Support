@@ -1,21 +1,41 @@
 version: '3.8'
 
 services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:latest
+    container_name: hr_chatbot_db
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  # FastAPI Backend
   backend:
     build: ./backend
+    container_name: hr_chatbot_backend
     ports:
       - "8000:8000"
     env_file:
       - ./backend/.env
-    restart: always
+    environment:
+      - MONGO_DETAILS=mongodb://mongodb:27017
+    depends_on:
+      - mongodb
+    volumes:
+      - ./backend/uploads:/app/uploads
 
+  # React Frontend
   frontend:
-    build:
+    build: 
       context: ./frontend
       args:
         - VITE_API_URL=http://localhost:8000
+    container_name: hr_chatbot_frontend
     ports:
-      - "80:80"
-    restart: always
+      - "5173:80"
     depends_on:
       - backend
+
+volumes:
+  mongo_data:
