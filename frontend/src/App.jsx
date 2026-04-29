@@ -36,21 +36,7 @@ export default function App() {
     const base = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
     return `${base.replace(/\/$/, '')}/${endpoint.replace(/^\//, '')}`;
   };
-  const handleLogin = async (e) => {
-  e.preventDefault();
-  try {
-    // CHANGE THIS LINE: Ensure no extra slashes
-    const res = await axios.post(`${API_BASE_URL}/login`, {
-      email: loginData.email,
-      phone: loginData.phone,
-      role: activeRole
-    });
-    
-    // ... rest of your logic
-  } catch (err) {
-    console.error("Verification failed", err);
-  }
-};
+  
 
   useEffect(() => {
     setSessionId(uuidv4());
