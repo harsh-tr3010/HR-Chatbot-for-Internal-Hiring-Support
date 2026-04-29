@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 MONGO_DETAILS = os.getenv("MONGO_DETAILS", "mongodb://localhost:27017")
-client = AsyncIOMotorClient(MONGO_URI)
+client = AsyncIOMotorClient(MONGO_DETAILS)
 db = client.hr_chatbot_db
 
 job_openings_collection = db.get_collection("job_openings")
