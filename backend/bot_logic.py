@@ -282,8 +282,9 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                         reader = PyPDF2.PdfReader(f)
                         text = "".join([page.extract_text() for page in reader.pages if page.extract_text()])
                     
+                    # FIX: Removed 'location' from the prompt so we can ask for it manually
                     sys_prompt = """You are an expert HR resume parser. Extract the following details from the text and return ONLY a valid JSON object.
-                    Required keys: 'full_name', 'email', 'phone', 'location', 'skills', 'experiences' (list of objects with 'start' and 'end' keys strictly in 'YYYY-MM' format. If currently working there, set 'end' to 'Present')."""
+                    Required keys: 'full_name', 'email', 'phone', 'skills', 'experiences' (list of objects with 'start' and 'end' keys strictly in 'YYYY-MM' format. If currently working there, set 'end' to 'Present')."""
                     
                     comp = groq_client.chat.completions.create(
                         model="llama-3.1-8b-instant",
@@ -318,9 +319,11 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                     session["data"].update(parsed_data)
                     session["data"]["total_experience"] = str(calculated_years)
                     session["data"]["resume_link"] = message
-                    session["step"] = "ask_current_ctc"
                     
-                    return f"✅ **Resume Parsed Successfully!**\n\n👤 Name: {session['data'].get('full_name')}\n📧 Email: {session['data'].get('email')}\n📍 Location: {session['data'].get('location')}\n🎓 Exp: **{calculated_years} yrs**\n🛠️ Skills: {session['data'].get('skills')}\n\nJust two more questions! What is your **Current CTC**? (Enter a number)"
+                    # FIX: Send the user to the new location step!
+                    session["step"] = "ask_parsed_location"
+                    
+                    return f"✅ **Resume Parsed Successfully!**\n\n👤 Name: {session['data'].get('full_name')}\n📧 Email: {session['data'].get('email')}\n🎓 Exp: **{calculated_years} yrs**\n🛠️ Skills: {session['data'].get('skills')}\n\n📍 To ensure we match you with the right office, what is your **Current or Preferred Location**?"
                     
                 except Exception as e:
                     session["step"] = "ask_name"
@@ -328,6 +331,12 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             else:
                 session["step"] = "ask_name"
                 return "No problem! Let's do it manually. Please share your **Full Name**."
+
+        # --- NEW STEP: Ask for location after the resume is parsed ---
+        elif step == "ask_parsed_location":
+            session["data"]["location"] = message
+            session["step"] = "ask_current_ctc"
+            return "Got it! Just two more questions. What is your **Current CTC**? (Enter a number)"
 
         elif step == "ask_name":
             session["data"]["full_name"] = message
