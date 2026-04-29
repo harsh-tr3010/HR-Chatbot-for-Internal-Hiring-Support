@@ -16,6 +16,11 @@ app = FastAPI()
 @app.get("/")
 async def root():
     return {"status": "HR Chatbot API is running", "version": "1.0.0"}
+origins = [
+    "http://localhost:5173",
+    "https://hr-chatbot-for-internal-hiring-support-frontend-ar0cwk6d9.vercel.app",
+]
+
 
 app.add_middleware(
     CORSMiddleware,
