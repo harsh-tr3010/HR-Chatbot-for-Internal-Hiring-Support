@@ -214,17 +214,41 @@ async def upload_file(file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, buffer)
     return {"file_url": file_path}
 
-@app.get("/export/candidates")
-async def export_candidates():
-    candidates = await candidates_collection.find({}).to_list(1000)
+
+# --- NEW: DYNAMIC CATEGORY-WISE EXPORT ENDPOINT ---
+@app.get("/export")
+async def export_data(type: str = "all_candidates"):
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Name", "Email", "Phone", "Role Applied", "Experience (Yrs)", "Skills", "Expected CTC", "Status"])
-    for c in candidates:
-        writer.writerow([
-            c.get("full_name", ""), c.get("email", ""), c.get("phone", ""),
-            c.get("preferred_role", ""), c.get("total_experience", ""),
-            c.get("skills", ""), c.get("expected_ctc", ""), c.get("screening_status", "")
-        ])
+    
+    if type == "hiring_requests":
+        reqs = await hiring_requests_collection.find({}).to_list(1000)
+        writer.writerow(["Department", "Role Required", "Positions", "Experience", "Skills", "Location", "Budget", "Urgency", "Manager"])
+        for r in reqs:
+            writer.writerow([r.get("department",""), r.get("role_required",""), r.get("positions",""), r.get("required_experience",""), r.get("required_skills",""), r.get("job_location",""), r.get("budget",""), r.get("urgency",""), r.get("reporting_manager","")])
+    else:
+        query = {}
+        if type == "hired": query = {"screening_status": {"$regex": "Hired", "$options": "i"}}
+        elif type == "rejected": query = {"screening_status": {"$regex": "Reject|Not suitable|Missing", "$options": "i"}}
+        elif type == "shortlisted": query = {"screening_status": {"$regex": "Shortlisted", "$options": "i"}}
+        elif type == "interview_done": query = {"screening_status": {"$regex": "Interview Done", "$options": "i"}}
+        elif type == "pending": query = {"screening_status": {"$regex": "Pending|Awaiting", "$options": "i"}}
+        
+        candidates = await candidates_collection.find(query).to_list(1000)
+        writer.writerow(["Name", "Email", "Phone", "Role Applied", "Experience (Yrs)", "Skills", "Expected CTC", "Status"])
+        for c in candidates:
+            writer.writerow([c.get("full_name", ""), c.get("email", ""), c.get("phone", ""), c.get("preferred_role", ""), c.get("total_experience", ""), c.get("skills", ""), c.get("expected_ctc", ""), c.get("screening_status", "")])
+    
     output.seek(0)
-    return StreamingResponse(output, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=candidates_export.csv"})
+    return StreamingResponse(output, media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=export_{type}.csv"})
+
+# --- FALLBACK: JUST IN CASE ---
+@app.get("/export/candidates")
+async def export_candidates_fallback():
+    return await export_data(type="all_candidates")
+
+# --- DASHBOARD STATUS UPDATE ENDPOINT ---
+@app.put("/admin/candidates/{cand_id}/status")
+async def update_candidate_status(cand_id: str, status: str):
+    await candidates_collection.update_one({"_id": ObjectId(cand_id)}, {"$set": {"screening_status": status}})
+    return {"success": True}

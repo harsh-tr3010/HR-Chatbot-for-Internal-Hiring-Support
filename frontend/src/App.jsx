@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
-import { Send, User, Bot, Briefcase, Paperclip, Moon, Sun, MonitorDot, Bell, LayoutDashboard, MessageSquare, Users, CheckCircle, XCircle, Clock, FileText, Trash2, Check, X } from 'lucide-react';
+import { Send, User, Bot, Briefcase, Paperclip, Moon, Sun, MonitorDot, Bell, LayoutDashboard, MessageSquare, Users, CheckCircle, XCircle, Clock, FileText, Trash2, Check, X, Download } from 'lucide-react';
 
 export default function App() {
   const [currentRole, setCurrentRole] = useState('Candidate');
@@ -9,14 +9,13 @@ export default function App() {
   const [viewMode, setViewMode] = useState('chat'); 
   const [dashboardData, setDashboardData] = useState(null);
   
-  // Filtering, Tabs, and Popups
+  // Filtering, Tabs, Popups, and Export
   const [candidateFilter, setCandidateFilter] = useState('all');
-  const [activeTab, setActiveTab] = useState('candidates'); // candidates, requests, jobs
+  const [activeTab, setActiveTab] = useState('candidates');
   const [popup, setPopup] = useState({ isOpen: false, type: null, data: null });
+  const [showExportModal, setShowExportModal] = useState(false);
 
-  const [messages, setMessages] = useState([
-    { role: 'bot', text: 'Hello! I am your HR Hiring Assistant. You are currently in **Candidate** mode. How can I help you today?' }
-  ]);
+  const [messages, setMessages] = useState([{ role: 'bot', text: 'Hello! I am your HR Hiring Assistant. You are currently in **Candidate** mode. How can I help you today?' }]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState('');
@@ -27,7 +26,6 @@ export default function App() {
   const [authEmail, setAuthEmail] = useState('');
   const [authPhone, setAuthPhone] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
-
   const [notifications, setNotifications] = useState([]);
   const [showDropdown, setShowDropdown] = useState(false);
 
@@ -36,27 +34,22 @@ export default function App() {
 
   useEffect(() => {
     setSessionId(uuidv4());
-    const isDark = localStorage.getItem('theme') === 'dark';
-    if (isDark) { document.documentElement.classList.add('dark'); setDarkMode(true); }
+    if (localStorage.getItem('theme') === 'dark') { document.documentElement.classList.add('dark'); setDarkMode(true); }
   }, []);
 
-  useEffect(() => {
-    if (viewMode === 'chat') endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, viewMode]);
+  useEffect(() => { if (viewMode === 'chat') endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, viewMode]);
 
   const fetchNotifications = async () => {
     if (currentRole === 'Candidate' && !authEmail) return; 
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
-      const res = await axios.get(`${apiUrl}/notifications`, { params: { role: currentRole, email: authEmail } });
+      const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/notifications`, { params: { role: currentRole, email: authEmail } });
       setNotifications(res.data.notifications);
     } catch (error) { console.error("Error fetching notifications"); }
   };
 
   const fetchDashboardData = async () => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
-      const res = await axios.get(`${apiUrl}/admin/dashboard`);
+      const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/admin/dashboard`);
       setDashboardData(res.data);
     } catch (error) { console.error("Failed to load dashboard data"); }
   };
@@ -67,26 +60,24 @@ export default function App() {
     return () => clearInterval(interval);
   }, [currentRole, authEmail]);
 
-  useEffect(() => {
-    if (viewMode === 'dashboard') fetchDashboardData();
-  }, [viewMode]);
+  useEffect(() => { if (viewMode === 'dashboard') fetchDashboardData(); }, [viewMode]);
 
   const handleApproveRequest = async (id, e) => {
     e.stopPropagation();
-    try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
-      await axios.post(`${apiUrl}/admin/requests/${id}/approve`);
-      fetchDashboardData(); 
-    } catch (error) { console.error("Failed to approve"); }
+    try { await axios.post(`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/admin/requests/${id}/approve`); fetchDashboardData(); } catch (error) { console.error("Failed to approve"); }
   };
 
   const handleDeleteJob = async (id, e) => {
     e.stopPropagation();
+    try { await axios.delete(`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/admin/jobs/${id}`); fetchDashboardData(); } catch (error) { console.error("Failed to delete"); }
+  };
+
+  const handleUpdateStatus = async (id, newStatus, e) => {
+    e.stopPropagation();
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
-      await axios.delete(`${apiUrl}/admin/jobs/${id}`);
+      await axios.put(`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/admin/candidates/${id}/status?status=${newStatus}`);
       fetchDashboardData();
-    } catch (error) { console.error("Failed to delete"); }
+    } catch (error) { console.error("Failed to update status"); }
   };
 
   const toggleDarkMode = () => {
@@ -95,74 +86,40 @@ export default function App() {
   };
 
   const switchRole = (newRole) => {
-    setCurrentRole(newRole); 
-    setViewMode('chat'); 
-    setSessionId(uuidv4()); 
+    setCurrentRole(newRole); setViewMode('chat'); setSessionId(uuidv4()); 
     setMessages([{ role: 'bot', text: `Switched to **${newRole}** mode. How can I assist you today?` }]);
     
-    // --- UPDATED: Auto-fill Dummy Logins ---
-    if (newRole === 'HR Admin') {
-      setAuthEmail('hradmin@abc.com');
-      setAuthPhone('0000000000'); // Updated phone
-    } else if (newRole === 'Hiring Manager') {
-      setAuthEmail('hrm@abc.com');
-      setAuthPhone('1111111111'); // Updated phone
-    } else {
-      setAuthEmail('');
-      setAuthPhone('');
+    if (newRole === 'HR Admin') { 
+      setAuthEmail('hradmin@abc.com'); setAuthPhone('0000000000');
+    } else if (newRole === 'Hiring Manager') { 
+      setAuthEmail('hrm@abc.com'); setAuthPhone('1111111111');
+    } else { 
+      setAuthEmail(''); setAuthPhone(''); 
     }
-
-    setShowAuthModal(true); 
-    setAuthStep(1); 
-    setNotifications([]); 
-    setShowDropdown(false); 
-    setCandidateFilter('all');
+    
+    setShowAuthModal(true); setAuthStep(1); setNotifications([]); setShowDropdown(false); setCandidateFilter('all');
   };
 
   const handleRoleChange = (e) => switchRole(e.target.value);
 
-  // --- UPDATED: Universal Login Handler ---
   const handleLogin = async (e) => {
-    e.preventDefault(); 
-    setIsVerifying(true);
+    e.preventDefault(); setIsVerifying(true);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
-      // Hits the new /login endpoint and passes the role
-      const res = await axios.post(`${apiUrl}/login`, { email: authEmail, phone: authPhone, role: currentRole });
-      
-      if (res.data.history && res.data.history.length > 0) { 
-        setFetchedData({ history: res.data.history, session_id: res.data.session_id }); 
-        setAuthStep(2); 
-      } else { 
-        setMessages([{ role: 'bot', text: `Welcome! I don't see any previous chats for that email, so let's start fresh.` }]); 
-        setShowAuthModal(false); 
-      }
+      const res = await axios.post(`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/login`, { email: authEmail, phone: authPhone, role: currentRole });
+      if (res.data.history && res.data.history.length > 0) { setFetchedData({ history: res.data.history, session_id: res.data.session_id }); setAuthStep(2); 
+      } else { setMessages([{ role: 'bot', text: `Welcome! I don't see any previous chats for that email, so let's start fresh.` }]); setShowAuthModal(false); }
       fetchNotifications();
-    } catch (error) { 
-      console.error("Verification failed"); 
-    } finally { 
-      setIsVerifying(false); 
-    }
+    } catch (error) { console.error("Verification failed"); } finally { setIsVerifying(false); }
   };
 
-
-  const handleRestoreChat = () => {
-    setMessages(fetchedData.history);
-    if (fetchedData.session_id) setSessionId(fetchedData.session_id);
-    setShowAuthModal(false);
-  };
-
-  const handleStartNewChat = () => {
-    setMessages([{ role: 'bot', text: `Welcome back! Let's start a brand new conversation.` }]);
-    setShowAuthModal(false);
-  };
+  const handleRestoreChat = () => { setMessages(fetchedData.history); if (fetchedData.session_id) setSessionId(fetchedData.session_id); setShowAuthModal(false); };
+  const handleStartNewChat = () => { setMessages([{ role: 'bot', text: `Welcome back! Let's start a brand new conversation.` }]); setShowAuthModal(false); };
 
   const sendMessage = async (e) => {
     e?.preventDefault(); if (!input.trim()) return;
     const userMessage = input.trim(); setMessages(prev => [...prev, { role: 'user', text: userMessage }]); setInput(''); setIsLoading(true);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
-      const res = await axios.post(`${apiUrl}/chat`, { session_id: sessionId, message: userMessage, user_role: currentRole });
+      const res = await axios.post(`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/chat`, { session_id: sessionId, message: userMessage, user_role: currentRole });
       setMessages(prev => [...prev, { role: 'bot', text: res.data.response }]);
     } catch (error) { setMessages(prev => [...prev, { role: 'bot', text: 'Server error.' }]); } finally { setIsLoading(false); }
   };
@@ -172,18 +129,13 @@ export default function App() {
     setMessages(prev => [...prev, { role: 'user', text: `📎 Uploading: ${file.name}...` }]);
     const formData = new FormData(); formData.append('file', file);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
-      const uploadRes = await axios.post(`${apiUrl}/upload`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-      const chatRes = await axios.post(`${apiUrl}/chat`, { session_id: sessionId, message: uploadRes.data.file_url, user_role: currentRole });
+      const uploadRes = await axios.post(`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/upload`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const chatRes = await axios.post(`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/chat`, { session_id: sessionId, message: uploadRes.data.file_url, user_role: currentRole });
       setMessages(prev => { const newMsgs = [...prev]; newMsgs.pop(); return [...newMsgs, { role: 'user', text: `📎 Attached: ${file.name}` }, { role: 'bot', text: chatRes.data.response }]; });
     } catch (error) { setMessages(prev => { const newMsgs = [...prev]; newMsgs.pop(); return [...newMsgs, { role: 'bot', text: 'Sorry, upload failed.' }]; }); } finally { setIsLoading(false); e.target.value = null; }
   };
 
-  const handleQuickReply = (text) => {
-    setInput(text);
-    setTimeout(() => document.getElementById('submitBtn').click(), 50);
-  };
-
+  const handleQuickReply = (text) => { setInput(text); setTimeout(() => document.getElementById('submitBtn').click(), 50); };
   const formatText = (text) => text?.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>').replace(/\n/g, '<br/>') || '';
 
   const getQuickReplies = () => {
@@ -205,7 +157,34 @@ export default function App() {
   return (
     <div className="relative flex flex-col h-screen w-full font-sans overflow-hidden bg-[#f8fafc] dark:bg-[#0f172a] transition-colors duration-300">
       
-      {/* POPUP MODAL (For Candidates, Requests, Jobs) */}
+      {/* EXPORT MODAL */}
+      {showExportModal && (
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4 animate-fade-in">
+           <div className="bg-white dark:bg-gray-900 rounded-3xl shadow-2xl max-w-sm w-full p-6 border border-gray-200 dark:border-gray-800">
+              <div className="flex justify-between items-center mb-6">
+                 <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2"><Download size={20}/> Category Export</h3>
+                 <button onClick={() => setShowExportModal(false)} className="text-gray-400 hover:text-gray-800 dark:hover:text-white transition"><X size={24}/></button>
+              </div>
+              <div className="flex flex-col gap-3">
+                 {[
+                   {label: 'Pending Review Candidates', val: 'pending'}, 
+                   {label: 'Rejected Candidates', val: 'rejected'},
+                   {label: 'Shortlisted Candidates', val: 'shortlisted'}, 
+                   {label: 'Interview Done Candidates', val: 'interview_done'}, 
+                   {label: 'Hired Candidates', val: 'hired'},
+                   {label: 'Pending Hiring Requests', val: 'hiring_requests'}
+                 ].map(opt => (
+                    <a key={opt.val} href={`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/export?type=${opt.val}`} onClick={() => setShowExportModal(false)} 
+                       className="px-4 py-3 bg-gray-50 dark:bg-gray-800 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-xl text-sm font-semibold text-gray-700 dark:text-gray-300 transition text-center border border-gray-100 dark:border-gray-700">
+                       {opt.label}
+                    </a>
+                 ))}
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* POPUP MODAL */}
       {popup.isOpen && (
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4 animate-fade-in">
           <div className="bg-white dark:bg-gray-900 rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden border border-gray-200 dark:border-gray-800">
@@ -219,9 +198,7 @@ export default function App() {
                 return (
                   <div key={key} className="flex flex-col border-b border-gray-100 dark:border-gray-800 pb-2 last:border-0">
                     <span className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">{key.replace(/_/g, ' ')}</span>
-                    <span className="font-medium text-gray-900 dark:text-gray-100">
-                      {Array.isArray(value) ? value.join(', ') : (value || 'N/A').toString()}
-                    </span>
+                    <span className="font-medium text-gray-900 dark:text-gray-100">{Array.isArray(value) ? value.join(', ') : (value || 'N/A').toString()}</span>
                   </div>
                 );
               })}
@@ -235,68 +212,32 @@ export default function App() {
         <div className="absolute inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4 transition-opacity duration-300">
           <div className="bg-white dark:bg-gray-900 p-8 rounded-3xl shadow-2xl max-w-sm w-full border border-gray-100 dark:border-gray-800 scale-100">
             <h2 className="text-2xl font-extrabold text-gray-900 dark:text-white tracking-tight mb-6">{currentRole} Login</h2>
-            
             {authStep === 1 ? (
               <>
                 <p className="text-gray-500 dark:text-gray-400 mb-8 leading-relaxed">Please enter your details to verify your identity.</p>
                 <form onSubmit={handleLogin} className="space-y-5 mb-8">
-                  <input 
-                    type="email" 
-                    required 
-                    value={authEmail} 
-                    onChange={e => setAuthEmail(e.target.value)} 
-                    className="w-full border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none transition" 
-                    placeholder="Email (john@example.com)" 
-                  />
-                  <input 
-                    type="text" 
-                    required 
-                    value={authPhone} 
-                    onChange={e => setAuthPhone(e.target.value)} 
-                    className="w-full border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none transition" 
-                    placeholder="Phone Number (9876543210)" 
-                  />
-                  <button 
-                    type="submit" 
-                    disabled={isVerifying || !authEmail || !authPhone} 
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-semibold transition disabled:opacity-70 shadow-md"
-                  >
-                    {isVerifying ? 'Checking...' : 'Continue'}
-                  </button>
+                  <input type="email" required value={authEmail} onChange={e=>setAuthEmail(e.target.value)} className="w-full border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none transition" placeholder="Email (john@example.com)" />
+                  <input type="text" required value={authPhone} onChange={e=>setAuthPhone(e.target.value)} className="w-full border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none transition" placeholder="Phone Number (9876543210)" />
+                  <button type="submit" disabled={isVerifying || !authEmail || !authPhone} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-semibold transition disabled:opacity-70 shadow-md">{isVerifying ? 'Checking...' : 'Continue'}</button>
                 </form>
               </>
             ) : (
               <>
-                <div className="mb-8 text-center">
-                  <div className="mx-auto w-16 h-16 bg-green-100 dark:bg-green-900/30 text-green-600 rounded-full flex items-center justify-center mb-4">
-                    <User size={32} />
-                  </div>
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Welcome Back!</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Would you like to pick up your previous conversation, or start a new one?</p>
-                </div>
+                <div className="mb-8 text-center"><div className="mx-auto w-16 h-16 bg-green-100 dark:bg-green-900/30 text-green-600 rounded-full flex items-center justify-center mb-4"><User size={32} /></div><h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Welcome Back!</h3><p className="text-sm text-gray-500 dark:text-gray-400">Would you like to pick up your previous conversation, or start a new one?</p></div>
                 <div className="flex flex-col gap-3 mb-6">
-                  <button onClick={handleRestoreChat} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-xl font-semibold flex items-center justify-center gap-2">
-                    🕰️ Continue Older Chat
-                  </button>
-                  <button onClick={handleStartNewChat} className="w-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 py-3.5 rounded-xl font-semibold flex items-center justify-center gap-2">
-                    ✨ Start New Chat
-                  </button>
+                  <button onClick={handleRestoreChat} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-xl font-semibold flex items-center justify-center gap-2">🕰️ Continue Older Chat</button>
+                  <button onClick={handleStartNewChat} className="w-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 py-3.5 rounded-xl font-semibold flex items-center justify-center gap-2">✨ Start New Chat</button>
                 </div>
               </>
             )}
-            
             <div className="pt-6 border-t border-gray-100 dark:border-gray-800 text-center">
-              <p className="text-xs text-gray-400 mb-4 uppercase font-bold tracking-widest">Internal Employee Access</p>
-              <div className="flex justify-center gap-3">
-                <button onClick={() => switchRole('Hiring Manager')} className="text-xs font-semibold px-4 py-1.5 bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300 rounded-full hover:bg-purple-100 dark:hover:bg-purple-900 transition">
-                  Hiring Manager
-                </button>
-                <button onClick={() => switchRole('HR Admin')} className="text-xs font-semibold px-4 py-1.5 bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300 rounded-full hover:bg-green-100 dark:hover:bg-green-900 transition">
-                  HR Admin
-                </button>
+              <p className="text-xs text-gray-400 mb-4 uppercase font-bold tracking-widest">Switch Account Type</p>
+              <div className="flex flex-wrap justify-center gap-2">
+                <button onClick={() => switchRole('Candidate')} className="text-xs font-semibold px-4 py-1.5 bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 rounded-full hover:bg-blue-100 dark:hover:bg-blue-900 transition">👤 Candidate</button>
+                <button onClick={() => switchRole('Hiring Manager')} className="text-xs font-semibold px-4 py-1.5 bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300 rounded-full hover:bg-purple-100 dark:hover:bg-purple-900 transition">🟣 Hiring Manager</button>
+                <button onClick={() => switchRole('HR Admin')} className="text-xs font-semibold px-4 py-1.5 bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300 rounded-full hover:bg-green-100 dark:hover:bg-green-900 transition">🟢 HR Admin</button>
               </div>
             </div>
-            
           </div>
         </div>
       )}
@@ -313,14 +254,12 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-3 md:gap-4">
-            {/* DASHBOARD TOGGLE FOR HR ADMIN */}
             {currentRole === 'HR Admin' && (
               <button onClick={() => setViewMode(viewMode === 'chat' ? 'dashboard' : 'chat')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${viewMode === 'dashboard' ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'}`}>
                 {viewMode === 'chat' ? <><LayoutDashboard size={18}/> <span className="hidden md:inline">Dashboard</span></> : <><MessageSquare size={18}/> <span className="hidden md:inline">Chat Mode</span></>}
               </button>
             )}
 
-            {/* NOTIFICATION BELL */}
             <div className="relative">
               <button onClick={() => setShowDropdown(!showDropdown)} className="relative p-2.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-700 transition-all">
                 <Bell size={20}/>
@@ -378,13 +317,20 @@ export default function App() {
                 <div className="p-0 overflow-x-auto min-h-[400px]">
                   <table className="w-full text-left text-sm text-gray-600 dark:text-gray-300">
                     <thead className="bg-gray-50 dark:bg-gray-800/80 text-xs uppercase font-semibold text-gray-500">
-                      <tr><th className="px-6 py-4">Name</th><th className="px-6 py-4">Role</th><th className="px-6 py-4">Status</th></tr>
+                      <tr><th className="px-6 py-4">Name</th><th className="px-6 py-4">Role</th><th className="px-6 py-4">Status</th><th className="px-6 py-4 text-right">Actions</th></tr>
                     </thead>
                     <tbody>
                       {filteredCandidates?.map(c => (
                         <tr key={c._id} onClick={() => setPopup({ isOpen: true, type: 'Candidate', data: c })} className="border-b border-gray-50 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 cursor-pointer transition-colors">
                           <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">{c.full_name}</td><td className="px-6 py-4">{c.preferred_role}</td>
-                          <td className="px-6 py-4"><span className={`px-2.5 py-1 rounded-md text-xs font-bold ${c.screening_status?.includes('Shortlisted') || c.screening_status?.includes('Hired') ? 'bg-green-100 text-green-700' : c.screening_status?.includes('Reject') || c.screening_status?.includes('Not suitable') ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>{c.screening_status}</span></td>
+                          <td className="px-6 py-4"><span className={`px-2.5 py-1 rounded-md text-xs font-bold ${c.screening_status?.includes('Shortlisted') || c.screening_status?.includes('Hired') || c.screening_status?.includes('Interview') ? 'bg-green-100 text-green-700' : c.screening_status?.includes('Reject') || c.screening_status?.includes('Not suitable') ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>{c.screening_status}</span></td>
+                          <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex gap-2 justify-end">
+                              <button onClick={(e) => handleUpdateStatus(c._id, 'Interview Done', e)} title="Interview Done" className="bg-blue-100 text-blue-700 px-2.5 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-200 transition">Interview</button>
+                              <button onClick={(e) => handleUpdateStatus(c._id, 'Hired', e)} title="Hire Candidate" className="bg-green-100 text-green-700 px-2.5 py-1.5 rounded-lg text-xs font-bold hover:bg-green-200 transition">Hire</button>
+                              <button onClick={(e) => handleUpdateStatus(c._id, 'Rejected', e)} title="Reject Candidate" className="bg-red-100 text-red-700 px-2.5 py-1.5 rounded-lg text-xs font-bold hover:bg-red-200 transition">Reject</button>
+                            </div>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -433,7 +379,7 @@ export default function App() {
 
       ) : (
         /* CHAT MODE VIEW */
-    <div className="flex-1 flex flex-col overflow-hidden bg-[#f8fafc] dark:bg-[#0f172a] transition-colors duration-300">
+        <div className="flex-1 flex flex-col overflow-hidden bg-[#f8fafc] dark:bg-[#0f172a] transition-colors duration-300">
           
           <div className="flex-1 overflow-y-auto p-6 space-y-8">
             <div className="max-w-5xl mx-auto space-y-8">
@@ -460,7 +406,7 @@ export default function App() {
                 <button key={btn} onClick={() => handleQuickReply(btn)} className="whitespace-nowrap px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-full text-sm font-semibold border transition flex-shrink-0">{btn}</button>
               ))}
               {currentRole === 'HR Admin' && (
-                <a href={`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/export/candidates`} download className="whitespace-nowrap px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-full text-sm font-bold shadow-md flex-shrink-0 ml-auto">📥 Export</a>
+                <button onClick={() => setShowExportModal(true)} className="whitespace-nowrap px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-full text-sm font-bold shadow-md flex-shrink-0 ml-auto">📥 Export</button>
               )}
             </div>
             

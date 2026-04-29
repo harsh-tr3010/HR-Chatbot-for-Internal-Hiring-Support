@@ -166,20 +166,29 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
         intent = get_intent(message, user_role)
         
         if intent == "view_jobs":
-            city_prompt = f"Extract the city name from this text if the user is asking for jobs in a specific city. If they want all jobs, or no city is mentioned, return 'ALL'. Message: '{message}'. Output ONLY the city name or 'ALL'."
-            try:
-                city_comp = groq_client.chat.completions.create(
-                    model="llama-3.1-8b-instant",
-                    messages=[{"role": "user", "content": city_prompt}],
-                    temperature=0, max_tokens=10
-                )
-                city_target = city_comp.choices[0].message.content.strip().lower()
-            except:
+            msg_lower = message.lower().strip()
+            
+            # --- Explicit Bypass for Quick Replies & "All Jobs" ---
+            explicit_all_phrases = ["view job openings", "show all jobs", "all jobs", "show me all jobs", "list jobs", "show all"]
+            if msg_lower in explicit_all_phrases:
                 city_target = "all"
+            else:
+                # Use AI to extract city ONLY if they typed a custom sentence
+                city_prompt = f"Extract the city name from this text if the user is asking for jobs in a specific city. If they want all jobs, or no city is mentioned, return 'ALL'. Message: '{message}'. Output ONLY the city name or 'ALL'."
+                try:
+                    city_comp = groq_client.chat.completions.create(
+                        model="llama-3.1-8b-instant",
+                        messages=[{"role": "user", "content": city_prompt}],
+                        temperature=0, max_tokens=10
+                    )
+                    city_target = city_comp.choices[0].message.content.strip().lower()
+                except:
+                    city_target = "all"
                 
             jobs_cursor = job_openings_collection.find({})
             all_jobs = await jobs_cursor.to_list(length=100)
             
+            # Filter by City if a specific one was requested
             if city_target != "all" and "all" not in city_target:
                 all_jobs = [j for j in all_jobs if city_target in j.get('location', '').lower()]
                 
@@ -188,28 +197,39 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                     return f"There are currently no job openings in **{city_target.title()}**."
                 return "There are currently no job openings."
             
+            # HR Admin View
+            # HR Admin View
             if user_role == "HR Admin":
                 res = "🗂️ **Active Job Requisitions (Internal DB)**\n\n"
                 for j in all_jobs:
+                    ctc = j.get('budget', j.get('ctc', 'Not specified'))
+                    if ctc.lower() != 'not specified' and 'annum' not in ctc.lower():
+                        ctc = f"{ctc} per annum"
+
                     res += f"🔹 **{j['title']}** ({j['department']})\n"
-                    res += f"   📍 Loc: {j['location']} | 🎓 Exp: {j['experience_required']}+ yrs\n"
+                    res += f"   📍 Loc: {j['location']} | 🎓 Exp: {j['experience_required']}\n"
+                    res += f"   💰 Budget: {ctc}\n"
                     res += f"   🛠️ Skills Req: {', '.join(j['skills_required'])}\n"
                     res += "   ━━━━━━━━━━━━━━━━━━━━\n"
                 res += "\n💡 *Tip: You can ask me to generate a new job description for any of these roles.*"
                 return res
+            
+            # Candidate View
             else:
                 res = f"Here are our **Open Roles**{' in ' + city_target.title() if city_target != 'all' and 'all' not in city_target else ''}! 🌟\n\n"
                 for j in all_jobs:
                     ctc = j.get('budget', j.get('ctc', 'Not disclosed'))
+                    if ctc.lower() != 'not disclosed' and 'annum' not in ctc.lower():
+                        ctc = f"{ctc} per annum"
+                        
                     res += f"💼 **{j['title']}**\n"
                     res += f"🏢 *{j.get('department', 'General')}* | 📍 **{j.get('location', 'Any')}**\n"
-                    res += f"🎓 **Exp:** {j.get('experience_required', '0')}+ years | 💰 **CTC:** {ctc}\n"
+                    res += f"🎓 **Exp:** {j.get('experience_required', '0-1 yrs')} | 💰 **CTC:** {ctc}\n"
                     res += f"🛠️ **Skills:** {', '.join(j.get('skills_required', []))}\n"
                     res += f"📝 *{j.get('description', 'Join our amazing team!')}*\n"
                     res += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
                 res += "Ready? Reply with **'I want to apply for a job'** to start your application! 🚀"
                 return res
-
         elif intent == "apply_job":
             session["intent"] = "apply_job"
             session["step"] = "ask_role"
@@ -493,23 +513,39 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             session["data"]["role_required"] = message
             session["step"] = "ask_positions"
             return "How many positions are required?"
-        elif step == "ask_positions":
+        elifelif step == "ask_positions":
             if not is_numeric(message): return "Please enter a valid number."
             session["data"]["positions"] = int(message)
             session["step"] = "ask_exp"
-            return "What is the required experience (in years)?"
+            return "What is the required experience range? (e.g., '0-2', '3-5', or 'fresher')"
+            
         elif step == "ask_exp":
-            session["data"]["required_experience"] = message
+            # --- STRICT LLM Experience Range Formatter ---
+            exp_prompt = f"Convert the following experience requirement into a strict range format: 'X-Y yrs'. Convert words to numbers. If only a minimum is provided (e.g., '4+'), output '4-99 yrs'. If it implies fresher (e.g., '0' or 'fresher'), output '0-1 yrs'. NEVER output the word 'years' or '+ years'. Input: '{message}'. Output ONLY the exact range string (e.g., '0-2 yrs')."
+            try:
+                comp = groq_client.chat.completions.create(
+                    model="llama-3.1-8b-instant",
+                    messages=[{"role": "user", "content": exp_prompt}],
+                    temperature=0, max_tokens=10
+                )
+                formatted_exp = comp.choices[0].message.content.strip().replace("\"", "")
+            except:
+                formatted_exp = message + " yrs"
+            
+            session["data"]["required_experience"] = formatted_exp
             session["step"] = "ask_skills"
-            return "What skills are required? (Comma separated)"
+            return f"Got it, experience requirement set to **{formatted_exp}**. What skills are required? (Comma separated)"
+            
         elif step == "ask_skills":
             session["data"]["required_skills"] = message
             session["step"] = "ask_location"
             return "What is the job location?"
+            
         elif step == "ask_location":
             session["data"]["job_location"] = message
             session["step"] = "ask_budget"
-            return "What is the budget range for this role?"
+            # --- NEW: Explicitly ask for per annum ---
+            return "What is the budget range for this role? (Please specify as per annum, e.g., '10-15 LPA' or '12 Lakhs per annum')"
         elif step == "ask_budget":
             session["data"]["budget"] = message
             session["step"] = "ask_manager"
@@ -645,7 +681,7 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             if cand:
                 session["data"]["target_email"] = cand["email"]
                 session["step"] = "ask_new_status"
-                return f"✅ Candidate found: **{cand['full_name']}**\n📊 Current Status: *{cand.get('screening_status', 'Pending')}*\n\nWhat should their **New Status** be? (e.g., 'Awaiting Interview', 'Hired', 'Rejected')"
+                return f"✅ Candidate found: **{cand['full_name']}**\n📊 Current Status: *{cand.get('screening_status', 'Pending')}*\n\nWhat should their **New Status** be? (Choose one: **'Interview Done'**, **'Hired'**, or **'Rejected'**)"
             else:
                 sessions[session_id] = {"intent": None, "step": None, "data": {}}
                 return "❌ No candidate found with that email or phone number. Please try again."
