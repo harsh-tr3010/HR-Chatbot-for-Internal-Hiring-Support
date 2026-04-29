@@ -34,7 +34,7 @@ export default function App() {
 
   // --- HELPER: Bulletproof URL Construction ---
   const getApiUrl = (endpoint) => {
-    const base = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+    const base = (import.meta.env.VITE_API_URL || 'https://your-production-backend.vercel.app').replace(/\/$/, '');
     const cleanEndpoint = endpoint.replace(/^\//, '');
     return `${base}/${cleanEndpoint}`;
   };
