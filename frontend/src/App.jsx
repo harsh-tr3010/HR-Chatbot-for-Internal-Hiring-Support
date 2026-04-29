@@ -34,7 +34,6 @@ export default function App() {
 
   // --- HELPER: Bulletproof URL Construction ---
   const getApiUrl = (endpoint) => {
-    // Priority: Render URL (Hardcoded) > Env Var > Localhost
     const base = (
       "https://hr-chatbot-for-internal-hiring-support.onrender.com" || 
       import.meta.env.VITE_API_URL || 
@@ -340,7 +339,7 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-3 md:gap-4">
-            {/* ROLE DROPDOWN - NO LONGER HIDDEN ON MOBILE */}
+            {/* ROLE DROPDOWN */}
             <div className="relative flex items-center">
               <select 
                 value={currentRole} 
@@ -425,6 +424,58 @@ export default function App() {
                   </tbody>
                 </table>
               )}
+
+              {activeTab === 'requests' && (
+                <div className="p-6 space-y-4">
+                  {dashboardData?.requests && dashboardData.requests.length > 0 ? (
+                    dashboardData.requests.map((req) => (
+                      <div key={req._id} className="p-5 bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700 rounded-2xl flex justify-between items-center transition-all hover:shadow-md">
+                        <div>
+                          <h4 className="font-bold text-gray-900 dark:text-white text-lg">{req.role_required}</h4>
+                          <p className="text-sm text-gray-500 font-medium">{req.department} • {req.urgency} Priority</p>
+                        </div>
+                        <button 
+                          onClick={(e) => handleApproveRequest(req._id, e)} 
+                          className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-xs font-bold shadow-sm transition"
+                        >
+                          Approve & Post Job
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-20 text-gray-500">
+                      <Clock size={48} className="mb-4 opacity-20" />
+                      <p className="font-medium">No pending hiring requests found.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'jobs' && (
+                <div className="p-6 space-y-4">
+                  {dashboardData?.jobs && dashboardData.jobs.length > 0 ? (
+                    dashboardData.jobs.map((job) => (
+                      <div key={job._id} className="p-5 bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700 rounded-2xl flex justify-between items-center">
+                        <div>
+                          <h4 className="font-bold text-gray-900 dark:text-white text-lg">{job.title}</h4>
+                          <p className="text-sm text-gray-500">{job.department} • {job.location}</p>
+                        </div>
+                        <button 
+                          onClick={(e) => handleDeleteJob(job._id, e)} 
+                          className="p-2.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition"
+                        >
+                          <Trash2 size={20} />
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-20 text-gray-500">
+                      <Briefcase size={48} className="mb-4 opacity-20" />
+                      <p className="font-medium">No active job openings found.</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -452,7 +503,6 @@ export default function App() {
 
           <div className="w-full bg-white dark:bg-gray-950 border-t dark:border-gray-800">
             <div className="max-w-5xl mx-auto px-6 py-3 flex gap-2.5 overflow-x-auto no-scrollbar">
-              {/* QUICK CHAT BUTTONS WITH DARK MODE FONT FIX */}
               {getQuickReplies().map(btn => (
                 <button 
                   key={btn} 
