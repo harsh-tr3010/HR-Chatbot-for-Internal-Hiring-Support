@@ -197,7 +197,7 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                     return f"There are currently no job openings in **{city_target.title()}**."
                 return "There are currently no job openings."
             
-            # HR Admin View
+            w
             # HR Admin View
             if user_role == "HR Admin":
                 res = "🗂️ **Active Job Requisitions (Internal DB)**\n\n"
@@ -513,7 +513,7 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             session["data"]["role_required"] = message
             session["step"] = "ask_positions"
             return "How many positions are required?"
-        elifelif step == "ask_positions":
+        elif step == "ask_positions":
             if not is_numeric(message): return "Please enter a valid number."
             session["data"]["positions"] = int(message)
             session["step"] = "ask_exp"
