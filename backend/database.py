@@ -1,9 +1,10 @@
 import os
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
+import logging
 
 load_dotenv()
-
+logger = logging.getLogger(__name__)
 MONGO_DETAILS = os.getenv("MONGO_DETAILS", "mongodb://localhost:27017")
 client = AsyncIOMotorClient(MONGO_DETAILS)
 db = client.hr_chatbot_db
