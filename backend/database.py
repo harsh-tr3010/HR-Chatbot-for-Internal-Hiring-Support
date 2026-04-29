@@ -5,8 +5,13 @@ import logging
 
 load_dotenv()
 logger = logging.getLogger(__name__)
-MONGO_DETAILS = os.getenv("MONGO_DETAILS", "mongodb://localhost:27017")
-client = AsyncIOMotorClient(MONGO_DETAILS)
+mongo_url = os.environ.get("MONGO_DETAILS")
+if mongo_url:
+    logger.info("✅ MONGO_DETAILS found in environment.")
+else:
+    logger.warning("❌ MONGO_DETAILS NOT FOUND. Falling back to localhost.")
+    mongo_url = "mongodb://localhost:27017"
+client = AsyncIOMotorClient(mongo_url)
 db = client.hr_chatbot_db
 
 job_openings_collection = db.get_collection("job_openings")
