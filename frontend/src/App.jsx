@@ -34,21 +34,16 @@ export default function App() {
 
   // --- HELPER: Bulletproof URL Construction ---
   const getApiUrl = (endpoint) => {
-  // 1. We hardcode your Render URL as the primary fallback
-  // 2. We keep the env variable and localhost as backups
-  const base = (
-    "https://hr-chatbot-for-internal-hiring-support.onrender.com" || 
-    import.meta.env.VITE_API_URL || 
-    'http://127.0.0.1:8000'
-  ).replace(/\/$/, '');
+    // Priority: Render URL (Hardcoded) > Env Var > Localhost
+    const base = (
+      "https://hr-chatbot-for-internal-hiring-support.onrender.com" || 
+      import.meta.env.VITE_API_URL || 
+      'http://127.0.0.1:8000'
+    ).replace(/\/$/, '');
 
-  const cleanEndpoint = endpoint.replace(/^\//, '');
-  
-  // This console log will help us debug in the browser (F12) 
-  // to see EXACTLY what URL is being called.
-  const finalUrl = `${base}/${cleanEndpoint}`;
-  return finalUrl;
-};
+    const cleanEndpoint = endpoint.replace(/^\//, '');
+    return `${base}/${cleanEndpoint}`;
+  };
 
   useEffect(() => {
     setSessionId(uuidv4());
@@ -62,7 +57,7 @@ export default function App() {
     if (viewMode === 'chat') endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' }); 
   }, [messages, viewMode]);
 
-  // --- API CALLS (Updated with getApiUrl) ---
+  // --- API CALLS ---
 
   const fetchNotifications = async () => {
     if (currentRole === 'Candidate' && !authEmail) return; 
@@ -135,6 +130,8 @@ export default function App() {
     } catch (error) { console.error("Verification failed"); } finally { setIsVerifying(false); }
   };
 
+  const handleRoleChange = (e) => switchRole(e.target.value);
+
   const sendMessage = async (e) => {
     e?.preventDefault(); 
     if (!input.trim()) return;
@@ -183,8 +180,6 @@ export default function App() {
       }); 
     } finally { setIsLoading(false); e.target.value = null; }
   };
-
-  // --- UI HELPERS ---
 
   const toggleDarkMode = () => {
     if (darkMode) { 
@@ -338,13 +333,27 @@ export default function App() {
         <div className="w-full flex items-center justify-between px-6 py-4">
           <div className="flex items-center space-x-4">
             <div className="p-3 bg-blue-50 dark:bg-blue-950 rounded-2xl text-blue-600 dark:text-blue-400 shadow-inner"><Briefcase size={26} /></div>
-            <div>
+            <div className="hidden sm:block">
               <h1 className="text-xl md:text-2xl font-extrabold text-gray-950 dark:text-white tracking-tighter">HR Chatbot</h1>
               <p className="text-xs md:text-sm text-gray-500 dark:text-gray-400 font-medium">Digital HR Assistant</p>
             </div>
           </div>
           
           <div className="flex items-center gap-3 md:gap-4">
+            {/* ROLE DROPDOWN - NO LONGER HIDDEN ON MOBILE */}
+            <div className="relative flex items-center">
+              <select 
+                value={currentRole} 
+                onChange={handleRoleChange} 
+                className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-xs md:text-sm font-bold rounded-xl block p-2 md:p-3 pr-8 md:pr-10 outline-none border border-gray-200 dark:border-gray-700 appearance-none shadow-sm cursor-pointer"
+              >
+                <option value="Candidate">👤 Candidate</option>
+                <option value="Hiring Manager">🟣 Manager</option>
+                <option value="HR Admin">🟢 HR Admin</option>
+              </select>
+              <MonitorDot size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            </div>
+
             {currentRole === 'HR Admin' && (
               <button onClick={() => setViewMode(viewMode === 'chat' ? 'dashboard' : 'chat')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${viewMode === 'dashboard' ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'}`}>
                 {viewMode === 'chat' ? <><LayoutDashboard size={18}/> <span className="hidden md:inline">Dashboard</span></> : <><MessageSquare size={18}/> <span className="hidden md:inline">Chat Mode</span></>}
@@ -443,8 +452,15 @@ export default function App() {
 
           <div className="w-full bg-white dark:bg-gray-950 border-t dark:border-gray-800">
             <div className="max-w-5xl mx-auto px-6 py-3 flex gap-2.5 overflow-x-auto no-scrollbar">
+              {/* QUICK CHAT BUTTONS WITH DARK MODE FONT FIX */}
               {getQuickReplies().map(btn => (
-                <button key={btn} onClick={() => handleQuickReply(btn)} className="whitespace-nowrap px-4 py-2 bg-gray-100 dark:bg-gray-800 rounded-full text-sm font-semibold border dark:border-gray-700">{btn}</button>
+                <button 
+                  key={btn} 
+                  onClick={() => handleQuickReply(btn)} 
+                  className="whitespace-nowrap px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-100 rounded-full text-sm font-semibold border border-gray-200 dark:border-gray-700 transition flex-shrink-0 shadow-sm"
+                >
+                  {btn}
+                </button>
               ))}
               {currentRole === 'HR Admin' && (
                 <button onClick={() => setShowExportModal(true)} className="whitespace-nowrap px-5 py-2 bg-green-600 text-white rounded-full text-sm font-bold ml-auto">📥 Export</button>
