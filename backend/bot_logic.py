@@ -197,7 +197,6 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
                     return f"There are currently no job openings in **{city_target.title()}**."
                 return "There are currently no job openings."
             
-            w
             # HR Admin View
             if user_role == "HR Admin":
                 res = "🗂️ **Active Job Requisitions (Internal DB)**\n\n"
