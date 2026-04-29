@@ -79,7 +79,14 @@ async def evaluate_candidate(data: dict):
 
     # 2. SKILL CHECK (Requires at least 2 matching skills)
     req_skills = [s.lower() for s in job.get("skills_required", [])]
-    cand_skills = [s.strip().lower() for s in data.get("skills", "").split(",")]
+    
+    # --- FIX: Handle both Lists (from AI) and Strings (from manual entry) ---
+    raw_skills = data.get("skills", "")
+    if isinstance(raw_skills, list):
+        cand_skills = [str(s).strip().lower() for s in raw_skills]
+    else:
+        cand_skills = [s.strip().lower() for s in str(raw_skills).split(",")]
+        
     matched_skills = [s for s in cand_skills if any(req in s or s in req for req in req_skills)]
     skill_match = len(matched_skills) >= 2
 
