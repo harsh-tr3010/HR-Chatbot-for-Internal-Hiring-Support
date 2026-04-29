@@ -34,10 +34,21 @@ export default function App() {
 
   // --- HELPER: Bulletproof URL Construction ---
   const getApiUrl = (endpoint) => {
-    const base = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
-    const cleanEndpoint = endpoint.replace(/^\//, '');
-    return `${base}/${cleanEndpoint}`;
-  };
+  // 1. We hardcode your Render URL as the primary fallback
+  // 2. We keep the env variable and localhost as backups
+  const base = (
+    "https://hr-chatbot-for-internal-hiring-support.onrender.com" || 
+    import.meta.env.VITE_API_URL || 
+    'http://127.0.0.1:8000'
+  ).replace(/\/$/, '');
+
+  const cleanEndpoint = endpoint.replace(/^\//, '');
+  
+  // This console log will help us debug in the browser (F12) 
+  // to see EXACTLY what URL is being called.
+  const finalUrl = `${base}/${cleanEndpoint}`;
+  return finalUrl;
+};
 
   useEffect(() => {
     setSessionId(uuidv4());
