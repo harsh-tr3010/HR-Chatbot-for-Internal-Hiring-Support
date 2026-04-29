@@ -429,7 +429,11 @@ export default function App() {
                 <div className="p-6 space-y-4">
                   {dashboardData?.requests && dashboardData.requests.length > 0 ? (
                     dashboardData.requests.map((req) => (
-                      <div key={req._id} className="p-5 bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700 rounded-2xl flex justify-between items-center transition-all hover:shadow-md">
+                      <div 
+                        key={req._id} 
+                        onClick={() => setPopup({ isOpen: true, type: 'Hiring Request', data: req })}
+                        className="p-5 bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700 rounded-2xl flex justify-between items-center transition-all hover:shadow-md cursor-pointer"
+                      >
                         <div>
                           <h4 className="font-bold text-gray-900 dark:text-white text-lg">{req.role_required}</h4>
                           <p className="text-sm text-gray-500 font-medium">{req.department} • {req.urgency} Priority</p>
@@ -458,7 +462,9 @@ export default function App() {
                       <div key={job._id} className="p-5 bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700 rounded-2xl flex justify-between items-center">
                         <div>
                           <h4 className="font-bold text-gray-900 dark:text-white text-lg">{job.title}</h4>
-                          <p className="text-sm text-gray-500">{job.department} • {job.location}</p>
+                          <p className="text-sm text-gray-500">
+                            {job.department} • {job.location} • {job.experience_required} yrs exp
+                          </p>
                         </div>
                         <button 
                           onClick={(e) => handleDeleteJob(job._id, e)} 
