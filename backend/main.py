@@ -16,7 +16,7 @@ app = FastAPI()
 
 origins = [
     "http://localhost:5173",
-    "https://hr-chatbot-for-internal-hiring-support-frontend-41462lbss.vercel.app",
+    "https://hr-chatbot-for-internal-hiring-support-frontend.vercel.app",
 ]
 
 app.add_middleware(
