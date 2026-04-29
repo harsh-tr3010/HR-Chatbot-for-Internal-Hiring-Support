@@ -122,7 +122,7 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
     message_lower = message.lower().strip()
 
     # ==========================================
-    # --- NEW: DIRECT DATABASE INTERCEPTORS ---
+    # --- DIRECT DATABASE INTERCEPTORS ---
     # ==========================================
     
     # 1. View Job Openings (with City Filter)
@@ -222,8 +222,6 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
         intent = get_intent(message, user_role)
         
         if intent == "view_jobs":
-            # Note: This logic might be bypassed by the new interceptor above, 
-            # but we keep it just in case the LLM specifically routes here.
             explicit_all_phrases = ["view job openings", "show all jobs", "all jobs", "show me all jobs", "list jobs", "show all"]
             if message_lower in explicit_all_phrases:
                 city_target = "all"
@@ -569,16 +567,24 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
             return "What is the required experience range? (e.g., '0-2', '3-5', or 'fresher')"
             
         elif step == "ask_exp":
-            exp_prompt = f"Convert the following experience requirement into a strict range format: 'X-Y yrs'. Convert words to numbers. If only a minimum is provided (e.g., '4+'), output '4-99 yrs'. If it implies fresher (e.g., '0' or 'fresher'), output '0-1 yrs'. NEVER output the word 'years' or '+ years'. Input: '{message}'. Output ONLY the exact range string (e.g., '0-2 yrs')."
             try:
                 comp = groq_client.chat.completions.create(
                     model="llama-3.1-8b-instant",
-                    messages=[{"role": "user", "content": exp_prompt}],
+                    messages=[
+                        {
+                            "role": "system", 
+                            "content": "You extract experience ranges. Output ONLY the range in 'X-Y yrs' format. Convert 'fresher' to '0-1 yrs'. Convert '4+' to '4-99 yrs'. Do not output any other text or repeat the prompt."
+                        },
+                        {"role": "user", "content": message}
+                    ],
                     temperature=0, max_tokens=10
                 )
                 formatted_exp = comp.choices[0].message.content.strip().replace("\"", "")
-            except:
-                formatted_exp = message + " yrs"
+                
+                if len(formatted_exp) > 15:
+                    formatted_exp = f"{message.strip()} yrs"
+            except Exception:
+                formatted_exp = f"{message.strip()} yrs"
             
             session["data"]["required_experience"] = formatted_exp
             session["step"] = "ask_skills"
