@@ -5,7 +5,7 @@ import logging
 
 load_dotenv()
 logger = logging.getLogger(__name__)
-MONGO_DETAILS = os.environ.get("MONGO_DETAILS")
+MONGO_DETAILS = "mongodb+srv://harshtripathi803_db_user:Saloni%401311@cluster0.ak0mbu4.mongodb.net/?appName=Cluster0"
 
 if not MONGO_DETAILS:
     # This will print in your Render logs if the variable isn't loading
