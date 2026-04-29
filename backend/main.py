@@ -30,21 +30,29 @@ class ChatRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: str
     phone: str
+    role: str # <-- NEW: We now require the role
 
-@app.post("/candidate/login")
-async def candidate_login(request: LoginRequest):
+# --- UPDATED: UNIVERSAL ROLE LOGIN ---
+@app.post("/login")
+async def universal_login(request: LoginRequest):
     email = request.email.strip()
+    
+    # Check history specifically for their role and email
     past_sessions = await chat_history_collection.find({
         "role": "user", 
         "message": email,
-        "user_role": "Candidate"
+        "user_role": request.role
     }).to_list(length=20)
     
     history = []
     last_session_id = None
+    
     if past_sessions:
+        # Sort to find the most recent session
         past_sessions.sort(key=lambda x: x["timestamp"], reverse=True)
         last_session_id = past_sessions[0]["session_id"]
+        
+        # Fetch all messages from that specific session
         chats = await chat_history_collection.find({"session_id": last_session_id}).sort("timestamp", 1).to_list(length=100)
         for c in chats:
             history.append({"role": c["role"], "text": c["message"]})

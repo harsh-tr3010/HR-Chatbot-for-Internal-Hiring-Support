@@ -124,10 +124,21 @@ async def process_message(session_id: str, message: str, user_role: str = "Candi
     
     session = sessions[session_id]
 
-    if message.lower().strip() in ["cancel", "stop", "exit", "start over", "quit", "abort"]:
+    # 1. Check for Cancel/Stop
+    if message.lower().strip() in ["cancel", "stop", "exit", "quit", "abort"]:
         sessions[session_id] = {"intent": None, "step": None, "data": {}}
         return "🚫 **Process Cancelled.**\n\nI have cleared your current progress. What would you like to do instead?"
 
+    # 2. Check for Chat Reset
+    reset_phrases = [
+        "start over", "scrap this chat", "lets start", "let's start", 
+        "restart", "start again", "clear chat", "scrap chat"
+    ]
+    if message.lower().strip() in reset_phrases:
+        sessions[session_id] = {"intent": None, "step": None, "data": {}}
+        return "🔄 **Chat Reset!**\n\nWhat do you wanna ask?"
+
+    # 3. Interruption Check
     if session["intent"] and not message.startswith("uploads/"):
         check_prompt = f"Context: User is currently filling out a form field named '{session['step']}'.\nUser Message: '{message}'\nTask: Is the user providing an answer for the field, or are they asking a separate question/interrupting? Reply STRICTLY with 'ANSWER' or 'QUESTION'."
         try:

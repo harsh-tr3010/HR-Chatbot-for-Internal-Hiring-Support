@@ -71,7 +71,6 @@ export default function App() {
     if (viewMode === 'dashboard') fetchDashboardData();
   }, [viewMode]);
 
-  // --- NEW: Action Handlers for Dashboard ---
   const handleApproveRequest = async (id, e) => {
     e.stopPropagation();
     try {
@@ -96,20 +95,66 @@ export default function App() {
   };
 
   const switchRole = (newRole) => {
-    setCurrentRole(newRole); setViewMode('chat'); setSessionId(uuidv4()); 
+    setCurrentRole(newRole); 
+    setViewMode('chat'); 
+    setSessionId(uuidv4()); 
     setMessages([{ role: 'bot', text: `Switched to **${newRole}** mode. How can I assist you today?` }]);
-    setShowAuthModal(newRole === 'Candidate'); setAuthStep(1); setNotifications([]); setShowDropdown(false); setCandidateFilter('all');
+    
+    // --- UPDATED: Auto-fill Dummy Logins ---
+    if (newRole === 'HR Admin') {
+      setAuthEmail('hradmin@abc.com');
+      setAuthPhone('0000000000'); // Updated phone
+    } else if (newRole === 'Hiring Manager') {
+      setAuthEmail('hrm@abc.com');
+      setAuthPhone('1111111111'); // Updated phone
+    } else {
+      setAuthEmail('');
+      setAuthPhone('');
+    }
+
+    setShowAuthModal(true); 
+    setAuthStep(1); 
+    setNotifications([]); 
+    setShowDropdown(false); 
+    setCandidateFilter('all');
   };
 
-  const handleCandidateLogin = async (e) => {
-    e.preventDefault(); setIsVerifying(true);
+  const handleRoleChange = (e) => switchRole(e.target.value);
+
+  // --- UPDATED: Universal Login Handler ---
+  const handleLogin = async (e) => {
+    e.preventDefault(); 
+    setIsVerifying(true);
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
-      const res = await axios.post(`${apiUrl}/candidate/login`, { email: authEmail, phone: authPhone });
-      if (res.data.history && res.data.history.length > 0) { setFetchedData({ history: res.data.history, session_id: res.data.session_id }); setAuthStep(2); 
-      } else { setMessages([{ role: 'bot', text: `Welcome! I don't see any previous chats for that email, so let's start fresh.` }]); setShowAuthModal(false); }
+      // Hits the new /login endpoint and passes the role
+      const res = await axios.post(`${apiUrl}/login`, { email: authEmail, phone: authPhone, role: currentRole });
+      
+      if (res.data.history && res.data.history.length > 0) { 
+        setFetchedData({ history: res.data.history, session_id: res.data.session_id }); 
+        setAuthStep(2); 
+      } else { 
+        setMessages([{ role: 'bot', text: `Welcome! I don't see any previous chats for that email, so let's start fresh.` }]); 
+        setShowAuthModal(false); 
+      }
       fetchNotifications();
-    } catch (error) { console.error("Verification failed"); } finally { setIsVerifying(false); }
+    } catch (error) { 
+      console.error("Verification failed"); 
+    } finally { 
+      setIsVerifying(false); 
+    }
+  };
+
+
+  const handleRestoreChat = () => {
+    setMessages(fetchedData.history);
+    if (fetchedData.session_id) setSessionId(fetchedData.session_id);
+    setShowAuthModal(false);
+  };
+
+  const handleStartNewChat = () => {
+    setMessages([{ role: 'bot', text: `Welcome back! Let's start a brand new conversation.` }]);
+    setShowAuthModal(false);
   };
 
   const sendMessage = async (e) => {
@@ -134,7 +179,19 @@ export default function App() {
     } catch (error) { setMessages(prev => { const newMsgs = [...prev]; newMsgs.pop(); return [...newMsgs, { role: 'bot', text: 'Sorry, upload failed.' }]; }); } finally { setIsLoading(false); e.target.value = null; }
   };
 
+  const handleQuickReply = (text) => {
+    setInput(text);
+    setTimeout(() => document.getElementById('submitBtn').click(), 50);
+  };
+
   const formatText = (text) => text?.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>').replace(/\n/g, '<br/>') || '';
+
+  const getQuickReplies = () => {
+    if (currentRole === 'Candidate') return ['View job openings', 'Apply for a job', 'Check application status'];
+    if (currentRole === 'Hiring Manager') return ['I want to raise a hiring request'];
+    if (currentRole === 'HR Admin') return ['Pending hiring requests', 'Pending candidate requests', 'Shortlisted candidates', 'Show rejected candidates', 'Find candidate details', 'Update candidate status', 'Generate job description'];
+    return [];
+  };
 
   const filteredCandidates = dashboardData?.candidates.filter(c => {
     if (candidateFilter === 'all') return true;
@@ -173,6 +230,77 @@ export default function App() {
         </div>
       )}
 
+      {/* AUTH MODAL */}
+      {showAuthModal && (
+        <div className="absolute inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4 transition-opacity duration-300">
+          <div className="bg-white dark:bg-gray-900 p-8 rounded-3xl shadow-2xl max-w-sm w-full border border-gray-100 dark:border-gray-800 scale-100">
+            <h2 className="text-2xl font-extrabold text-gray-900 dark:text-white tracking-tight mb-6">{currentRole} Login</h2>
+            
+            {authStep === 1 ? (
+              <>
+                <p className="text-gray-500 dark:text-gray-400 mb-8 leading-relaxed">Please enter your details to verify your identity.</p>
+                <form onSubmit={handleLogin} className="space-y-5 mb-8">
+                  <input 
+                    type="email" 
+                    required 
+                    value={authEmail} 
+                    onChange={e => setAuthEmail(e.target.value)} 
+                    className="w-full border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none transition" 
+                    placeholder="Email (john@example.com)" 
+                  />
+                  <input 
+                    type="text" 
+                    required 
+                    value={authPhone} 
+                    onChange={e => setAuthPhone(e.target.value)} 
+                    className="w-full border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none transition" 
+                    placeholder="Phone Number (9876543210)" 
+                  />
+                  <button 
+                    type="submit" 
+                    disabled={isVerifying || !authEmail || !authPhone} 
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-semibold transition disabled:opacity-70 shadow-md"
+                  >
+                    {isVerifying ? 'Checking...' : 'Continue'}
+                  </button>
+                </form>
+              </>
+            ) : (
+              <>
+                <div className="mb-8 text-center">
+                  <div className="mx-auto w-16 h-16 bg-green-100 dark:bg-green-900/30 text-green-600 rounded-full flex items-center justify-center mb-4">
+                    <User size={32} />
+                  </div>
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Welcome Back!</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Would you like to pick up your previous conversation, or start a new one?</p>
+                </div>
+                <div className="flex flex-col gap-3 mb-6">
+                  <button onClick={handleRestoreChat} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-xl font-semibold flex items-center justify-center gap-2">
+                    🕰️ Continue Older Chat
+                  </button>
+                  <button onClick={handleStartNewChat} className="w-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 py-3.5 rounded-xl font-semibold flex items-center justify-center gap-2">
+                    ✨ Start New Chat
+                  </button>
+                </div>
+              </>
+            )}
+            
+            <div className="pt-6 border-t border-gray-100 dark:border-gray-800 text-center">
+              <p className="text-xs text-gray-400 mb-4 uppercase font-bold tracking-widest">Internal Employee Access</p>
+              <div className="flex justify-center gap-3">
+                <button onClick={() => switchRole('Hiring Manager')} className="text-xs font-semibold px-4 py-1.5 bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300 rounded-full hover:bg-purple-100 dark:hover:bg-purple-900 transition">
+                  Hiring Manager
+                </button>
+                <button onClick={() => switchRole('HR Admin')} className="text-xs font-semibold px-4 py-1.5 bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300 rounded-full hover:bg-green-100 dark:hover:bg-green-900 transition">
+                  HR Admin
+                </button>
+              </div>
+            </div>
+            
+          </div>
+        </div>
+      )}
+
       {/* HEADER */}
       <div className="w-full bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 sticky top-0 z-40 transition-colors duration-300">
         <div className="w-full flex items-center justify-between px-6 py-4">
@@ -185,11 +313,33 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-3 md:gap-4">
+            {/* DASHBOARD TOGGLE FOR HR ADMIN */}
             {currentRole === 'HR Admin' && (
               <button onClick={() => setViewMode(viewMode === 'chat' ? 'dashboard' : 'chat')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${viewMode === 'dashboard' ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'}`}>
                 {viewMode === 'chat' ? <><LayoutDashboard size={18}/> <span className="hidden md:inline">Dashboard</span></> : <><MessageSquare size={18}/> <span className="hidden md:inline">Chat Mode</span></>}
               </button>
             )}
+
+            {/* NOTIFICATION BELL */}
+            <div className="relative">
+              <button onClick={() => setShowDropdown(!showDropdown)} className="relative p-2.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-700 transition-all">
+                <Bell size={20}/>
+                {notifications.length > 0 && (<span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-gray-800 animate-pulse"></span>)}
+              </button>
+              {showDropdown && (
+                <div className="absolute right-0 mt-3 w-72 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-xl z-50 overflow-hidden">
+                  <div className="p-4 border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50"><h4 className="text-sm font-bold text-gray-900 dark:text-white">Alerts & Notifications</h4></div>
+                  <div className="max-h-60 overflow-y-auto p-2">
+                    {notifications.length > 0 ? notifications.map((note, idx) => (
+                        <div key={idx} onClick={() => { setShowDropdown(false); setViewMode('chat'); setMessages(prev => [...prev, { role: 'bot', text: note.details }]); }} className="p-3 text-sm text-gray-700 dark:text-gray-300 border-b border-gray-100 dark:border-gray-800 last:border-0 hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-lg transition-colors cursor-pointer flex items-center justify-between group">
+                          <span className="pr-2">{note.text}</span><span className="text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity text-xs font-bold whitespace-nowrap">View ➔</span>
+                        </div>
+                    )) : <div className="p-6 text-sm text-gray-500 text-center">No new notifications.</div>}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <button onClick={toggleDarkMode} className="p-2.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded-xl hover:bg-gray-200 transition-all">{darkMode ? <Sun size={20}/> : <Moon size={20}/>}</button>
             <div className="relative hidden md:block">
               <select value={currentRole} onChange={handleRoleChange} className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-semibold rounded-xl block p-3 pr-10 outline-none border-2 border-transparent focus:border-blue-400 appearance-none">
@@ -201,7 +351,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* DASHBOARD MODE */}
+      {/* DASHBOARD MODE VIEW */}
       {viewMode === 'dashboard' ? (
         <div className="flex-1 overflow-y-auto p-6 md:p-10 transition-colors duration-300">
           <div className="max-w-6xl mx-auto space-y-8">
@@ -216,14 +366,12 @@ export default function App() {
               </div>
             )}
 
-            {/* TAB NAVIGATION */}
             <div className="flex space-x-2 border-b border-gray-200 dark:border-gray-800">
               <button onClick={() => setActiveTab('candidates')} className={`pb-3 px-4 font-bold text-sm transition-colors ${activeTab === 'candidates' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-gray-500 hover:text-gray-800 dark:hover:text-gray-300'}`}>Candidates</button>
               <button onClick={() => setActiveTab('requests')} className={`pb-3 px-4 font-bold text-sm transition-colors ${activeTab === 'requests' ? 'border-b-2 border-purple-600 text-purple-600 dark:text-purple-400' : 'text-gray-500 hover:text-gray-800 dark:hover:text-gray-300'}`}>Hiring Requests</button>
               <button onClick={() => setActiveTab('jobs')} className={`pb-3 px-4 font-bold text-sm transition-colors ${activeTab === 'jobs' ? 'border-b-2 border-green-600 text-green-600 dark:text-green-400' : 'text-gray-500 hover:text-gray-800 dark:hover:text-gray-300'}`}>Active Jobs</button>
             </div>
 
-            {/* TAB CONTENT */}
             <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-3xl shadow-sm overflow-hidden">
               
               {activeTab === 'candidates' && (
@@ -284,31 +432,46 @@ export default function App() {
         </div>
 
       ) : (
-        /* CHAT MODE VIEW (Same as before, hidden to save space in instruction block) */
-        <div className="flex-1 overflow-y-auto bg-[#f8fafc] dark:bg-[#0f172a] transition-colors duration-300">
-          <div className="max-w-5xl mx-auto p-6 space-y-8">
-            {messages.map((msg, idx) => (
-              <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`flex max-w-[85%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} items-end`}>
-                  <div className={`flex-shrink-0 h-9 w-9 rounded-full flex items-center justify-center shadow ${msg.role === 'user' ? 'bg-blue-600 ml-3' : 'bg-green-500 mr-3'}`}>
-                    {msg.role === 'user' ? <User size={18} className="text-white" /> : <Bot size={18} className="text-white" />}
-                  </div>
-                  <div className={`p-4 rounded-3xl leading-relaxed text-sm md:text-base shadow-sm ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-100 border border-gray-100 dark:border-gray-800 rounded-bl-none'}`}>
-                    <div dangerouslySetInnerHTML={{ __html: formatText(msg.text) }} />
+        /* CHAT MODE VIEW */
+    <div className="flex-1 flex flex-col overflow-hidden bg-[#f8fafc] dark:bg-[#0f172a] transition-colors duration-300">
+          
+          <div className="flex-1 overflow-y-auto p-6 space-y-8">
+            <div className="max-w-5xl mx-auto space-y-8">
+              {messages.map((msg, idx) => (
+                <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`flex max-w-[85%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} items-end`}>
+                    <div className={`flex-shrink-0 h-9 w-9 rounded-full flex items-center justify-center shadow ${msg.role === 'user' ? 'bg-blue-600 ml-3' : 'bg-green-500 mr-3'}`}>
+                      {msg.role === 'user' ? <User size={18} className="text-white" /> : <Bot size={18} className="text-white" />}
+                    </div>
+                    <div className={`p-4 rounded-3xl leading-relaxed text-sm md:text-base shadow-sm ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-100 border border-gray-100 dark:border-gray-800 rounded-bl-none'}`}>
+                      <div dangerouslySetInnerHTML={{ __html: formatText(msg.text) }} />
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-            {isLoading && (<div className="flex justify-start"><div className="bg-white dark:bg-gray-900 text-gray-500 px-6 py-4 rounded-full rounded-bl-none text-sm font-medium border animate-pulse">Processing...</div></div>)}
-            <div ref={endOfMessagesRef} />
+              ))}
+              {isLoading && (<div className="flex justify-start"><div className="bg-white dark:bg-gray-900 text-gray-500 px-6 py-4 rounded-full rounded-bl-none text-sm font-medium border animate-pulse">Processing...</div></div>)}
+              <div ref={endOfMessagesRef} />
+            </div>
           </div>
-          
-          <div className="w-full bg-white dark:bg-gray-950 border-t border-gray-200 dark:border-gray-800 transition-colors absolute bottom-0">
-            <form onSubmit={sendMessage} className="max-w-5xl mx-auto px-6 py-4 flex items-center gap-3">
-              <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder={`Ask anything as ${currentRole}...`} className="flex-1 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white rounded-full px-6 py-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              <button type="submit" disabled={isLoading} className="bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-full disabled:opacity-50"><Send size={24} className="ml-1 mt-1 -mr-1 -mb-1" /></button>
+
+          <div className="w-full flex-shrink-0 bg-white dark:bg-gray-950 border-t border-gray-200 dark:border-gray-800 transition-colors z-10">
+            <div className="max-w-5xl mx-auto px-6 py-3 flex flex-wrap gap-2.5 items-center overflow-x-auto no-scrollbar">
+              {getQuickReplies().map((btn) => (
+                <button key={btn} onClick={() => handleQuickReply(btn)} className="whitespace-nowrap px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-full text-sm font-semibold border transition flex-shrink-0">{btn}</button>
+              ))}
+              {currentRole === 'HR Admin' && (
+                <a href={`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/export/candidates`} download className="whitespace-nowrap px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-full text-sm font-bold shadow-md flex-shrink-0 ml-auto">📥 Export</a>
+              )}
+            </div>
+            
+            <form onSubmit={sendMessage} className="max-w-5xl mx-auto px-6 pb-6 pt-2 flex items-center gap-3">
+              <button type="button" onClick={() => fileInputRef.current.click()} className="p-3.5 bg-gray-100 dark:bg-gray-800 text-gray-500 rounded-full transition hover:text-gray-800 dark:hover:text-white flex-shrink-0"><Paperclip size={22} /></button>
+              <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder={`Type as ${currentRole}...`} className="flex-1 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white rounded-full px-6 py-4 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-inner" />
+              <button id="submitBtn" type="submit" disabled={isLoading} className="bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-full shadow-md disabled:opacity-50"><Send size={24} className="ml-1 mt-1 -mr-1 -mb-1" /></button>
+              <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept=".pdf,.doc,.docx" />
             </form>
           </div>
+
         </div>
       )}
     </div>
