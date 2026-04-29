@@ -13,6 +13,9 @@ from bot_logic import process_message
 from database import candidates_collection, chat_history_collection, hiring_requests_collection, job_openings_collection
 
 app = FastAPI()
+@app.get("/")
+async def root():
+    return {"status": "HR Chatbot API is running", "version": "1.0.0"}
 
 app.add_middleware(
     CORSMiddleware,
