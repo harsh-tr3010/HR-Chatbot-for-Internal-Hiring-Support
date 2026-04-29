@@ -5,13 +5,15 @@ import logging
 
 load_dotenv()
 logger = logging.getLogger(__name__)
-mongo_url = os.environ.get("MONGO_DETAILS")
-if mongo_url:
-    logger.info("✅ MONGO_DETAILS found in environment.")
+MONGO_DETAILS = os.environ.get("MONGO_DETAILS")
+
+if not MONGO_DETAILS:
+    # This will print in your Render logs if the variable isn't loading
+    print("❌ ERROR: MONGO_DETAILS environment variable is NOT FOUND!")
 else:
-    logger.warning("❌ MONGO_DETAILS NOT FOUND. Falling back to localhost.")
-    mongo_url = "mongodb://localhost:27017"
-client = AsyncIOMotorClient(mongo_url)
+    print("✅ MONGO_DETAILS detected, attempting connection...")
+
+client = AsyncIOMotorClient(MONGO_DETAILS)
 db = client.hr_chatbot_db
 
 job_openings_collection = db.get_collection("job_openings")
