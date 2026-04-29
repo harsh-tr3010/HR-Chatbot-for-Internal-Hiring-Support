@@ -14,14 +14,10 @@ from database import candidates_collection, chat_history_collection, hiring_requ
 
 app = FastAPI()
 
-origins = [
-    "http://localhost:5173",
-    "https://hr-chatbot-for-internal-hiring-support-frontend.vercel.app",
-]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins, # Using the specific list instead of "*"
+    allow_origins=[*], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
