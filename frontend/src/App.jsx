@@ -32,7 +32,7 @@ export default function App() {
   const endOfMessagesRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  // --- HELPER: Bulletproof URL Construction ---
+  
   const getApiUrl = (endpoint) => {
     const base = (
       "https://hr-chatbot-for-internal-hiring-support.onrender.com" || 
@@ -56,7 +56,7 @@ export default function App() {
     if (viewMode === 'chat') endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' }); 
   }, [messages, viewMode]);
 
-  // --- API CALLS ---
+
 
   const fetchNotifications = async () => {
     if (currentRole === 'Candidate' && !authEmail) return; 
