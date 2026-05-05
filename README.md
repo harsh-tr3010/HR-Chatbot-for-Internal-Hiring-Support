@@ -56,3 +56,5 @@ docker-compose up --build
 | :--- | :--- | :--- |
 | **HR Admin** | `hradmin@abc.com` | `0000000000` |
 | **Hiring Manager** | `hrm@abc.com` | `1111111111` |
+
+## Live Link -  https://hr-chatbot-for-internal-hiring-supp-theta.vercel.app/
